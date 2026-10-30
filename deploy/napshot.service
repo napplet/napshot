@@ -1,0 +1,20 @@
+[Unit]
+Description=Napshot napplet screenshot watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust these paths for your checkout and Node 24 installation.
+WorkingDirectory=%h/Develop/napplet-screenshotter
+EnvironmentFile=%h/Develop/napplet-screenshotter/.env
+ExecStart=/usr/bin/env node dist/src/main.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=300
+UMask=0077
+NoNewPrivileges=true
+# Chromium needs user namespaces. Do not disable its sandbox.
+
+[Install]
+WantedBy=default.target

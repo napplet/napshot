@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Napshot gives napplets a preview: automated screenshots, mirrored on Blossom and discoverable on Nostr."
+    />
+    <meta name="theme-color" content="#eee9de" />
+    <title>Napshot · A preview for every napplet</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="masthead wrap">
+      <a class="wordmark" href="#" aria-label="Napshot home"
+        ><span class="viewfinder" aria-hidden="true"></span>napshot<span
+          class="period"
+          >.</span
+        ></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#how">How it works</a><a href="#shells">For shells</a
+        ><a href="#skill">Get the skill <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="orange-dot" aria-hidden="true"></span> The napplet
+            screenshot service
+          </p>
+          <h1 id="hero-title">
+            A little app.<br />A clearer<br /><em>first look.</em>
+          </h1>
+          <p class="intro">
+            Napshot watches for napplets without a screenshot, takes their
+            picture, and makes it available to every shell.
+          </p>
+          <a class="button" href="#skill"
+            >Add previews to your shell <span aria-hidden="true">↗</span></a
+          >
+          <p class="hero-note">
+            Root + named napplets. Blossom storage. Nostr discovery.
+          </p>
+        </div>
+        <figure
+          class="contact-sheet"
+          aria-label="Illustration of a napplet becoming a discoverable screenshot"
+        >
+          <div class="sheet-meta">
+            <span>NAPSHOT / CONTACT SHEET</span><span>01–03</span>
+          </div>
+          <div class="contact-frame empty-frame">
+            <span class="frame-index">01</span>
+            <div class="empty-viewfinder" aria-hidden="true">+</div>
+            <span class="frame-caption">A napplet. No preview.</span>
+          </div>
+          <div class="contact-frame captured-frame">
+            <span class="frame-index">02</span>
+            <div class="sample-app" aria-hidden="true">
+              <div class="sample-top"><span>Today</span><span>•••</span></div>
+              <div class="sample-date">30<span>OCT</span></div>
+              <div class="sample-line"></div>
+              <div class="sample-line short"></div>
+              <div class="sample-bars">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+            </div>
+            <span class="frame-caption">One frame, captured.</span>
+          </div>
+          <div class="sheet-output">
+            <span class="frame-index">03</span
+            ><span>Mirrored. Signed. Discoverable.</span
+            ><span class="output-arrow" aria-hidden="true">↗</span>
+          </div>
+          <figcaption>
+            Illustrated workflow · previews belong to an exact event
+          </figcaption>
+        </figure>
+      </section>
+      <section class="process wrap" id="how" aria-labelledby="process-title">
+        <div class="section-heading">
+          <p class="eyebrow">01 / From event to image</p>
+          <h2 id="process-title">
+            Publish your napplet.<br />Napshot handles the picture.
+          </h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="step-number">01</span>
+            <h3>Watch</h3>
+            <p>
+              Find root and named manifests on configured relays. Keep the
+              author’s usable screenshot when one already exists.
+            </p>
+          </li>
+          <li>
+            <span class="step-number">02</span>
+            <h3>Capture</h3>
+            <p>
+              Render the napplet in a sandboxed Paja shell and capture its
+              iframe. A fresh, signed-out view, with no personal account
+              attached.
+            </p>
+          </li>
+          <li>
+            <span class="step-number">03</span>
+            <h3>Mirror</h3>
+            <p>
+              Upload the same PNG to at least two Blossom servers. The content
+              hash identifies the image across every copy.
+            </p>
+          </li>
+          <li>
+            <span class="step-number">04</span>
+            <h3>Label</h3>
+            <p>
+              Publish a signed NIP-32 event referencing the exact napplet event.
+              Shells can discover the picture without changing the manifest.
+            </p>
+          </li>
+        </ol>
+        <p class="scope-note">
+          Root <code>15129</code> + named <code>35129</code> only. Snapshots are
+          excluded. Captures show the initial view; features requiring an
+          account or network data may appear empty.
+        </p>
+      </section>
+      <section class="shell-section" id="shells" aria-labelledby="shell-title">
+        <div class="wrap shell-layout">
+          <div>
+            <p class="eyebrow">02 / For shell implementers</p>
+            <h2 id="shell-title">One lookup.<br />A better app shelf.</h2>
+            <p class="section-intro">
+              Use the author’s screenshot first. When it’s missing, look for a
+              label from a Napshot signer you trust.
+            </p>
+            <ol class="integration-list">
+              <li>
+                Query kind <code>1985</code> by the manifest’s exact event ID,
+                label namespace, and trusted signer.
+              </li>
+              <li>
+                Verify the signature, target, and screenshot hash. An address
+                tag alone doesn’t identify a revision.
+              </li>
+              <li>
+                Fetch the PNG from the listed Blossom servers. Verify its
+                SHA-256 before displaying it; try another mirror if needed.
+              </li>
+            </ol>
+            <p class="muted">
+              A screenshot is a preview, not an endorsement or a guarantee that
+              a napplet is safe.
+            </p>
+          </div>
+          <div class="code-panel">
+            <div class="code-heading">
+              <span>RELAY FILTER</span><span>NIP-32 / 1985</span>
+            </div>
+            <pre><code>{
+  "kinds": [1985],
+  "authors": [trustedSigner],
+  "#e": [manifest.id],
+  "#L": ["#screenshot"]
+}</code></pre>
+            <div class="code-footer">
+              <span class="orange-dot" aria-hidden="true"></span
+              ><span
+                >The <code>screenshot</code> tag carries the image hash, MIME
+                type, dimensions, and size. <code>server</code> tags locate its
+                mirrors.</span
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
+        class="skill-section wrap"
+        id="skill"
+        aria-labelledby="skill-title"
+      >
+        <div>
+          <p class="eyebrow">03 / Give your coding agent the contract</p>
+          <h2 id="skill-title">Install once.<br />Build it into your shell.</h2>
+          <p class="section-intro">
+            The <strong>napshot-shell</strong> skill covers discovery, trust,
+            image verification, and fallback behavior.
+          </p>
+        </div>
+        <div class="skill-instructions">
+          <div class="command-row">
+            <code id="install-command">npx skills add napplet/napshot</code
+            ><button
+              id="copy-command"
+              type="button"
+              aria-label="Copy skill installation command"
+            >
+              Copy
+            </button>
+          </div>
+          <p
+            class="copy-feedback"
+            id="copy-feedback"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p>Then ask your coding agent:</p>
+          <blockquote>
+            “Use <code>$napshot-shell</code> to add trusted Napshot previews to
+            our napplet picker.”
+          </blockquote>
+          <p class="muted publication-note">
+            Install the shell integration skill from
+            <code>napplet/napshot</code>.
+          </p>
+        </div>
+      </section>
+      <section class="service-section wrap" aria-labelledby="service-title">
+        <div class="service-heading">
+          <div>
+            <p class="eyebrow">This instance</p>
+            <h2 id="service-title">Service snapshot</h2>
+          </div>
+          <p id="service-state" class="service-state" role="status">
+            Checking status…
+          </p>
+        </div>
+        <div id="service-details" hidden>
+          <dl class="service-counts">
+            <div>
+              <dt>Pending</dt>
+              <dd id="pending-count">—</dd>
+            </div>
+            <div>
+              <dt>Completed</dt>
+              <dd id="done-count">—</dd>
+            </div>
+            <div>
+              <dt>Retrying</dt>
+              <dd id="failed-count">—</dd>
+            </div>
+            <div>
+              <dt>Last scan</dt>
+              <dd class="scan-time" id="last-scan">—</dd>
+            </div>
+          </dl>
+          <div class="signer">
+            <span>Signer public key</span><code id="signer-key"></code>
+          </div>
+          <p class="muted">
+            Verify this key with the operator before adding it to your shell’s
+            trusted signers.
+          </p>
+        </div>
+        <noscript
+          ><p>
+            Enable JavaScript to see instance status or copy the installation
+            command. All integration instructions are available above.
+          </p></noscript
+        >
+      </section>
+    </main>
+    <footer class="footer wrap">
+      <a class="wordmark" href="#">napshot<span class="period">.</span></a>
+      <p>A preview for every napplet.</p>
+      <span class="footer-label">NOSTR IN. PICTURE OUT.</span>
+    </footer>
+  </body>
+</html>
