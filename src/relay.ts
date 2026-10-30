@@ -39,7 +39,7 @@ export class Relays {
   constructor(readonly urls: string[], private readonly timeoutMs = 15000) {}
   async query(url: string, filter: Filter): Promise<Event[]> {
     const id = randomUUID(); const events = new Map<string, Event>();
-    return exchange(url, ['REQ', id, filter], frame => {
+    return await exchange(url, ['REQ', id, filter], frame => {
       if (frame[1] !== id) return;
       if (frame[0] === 'EOSE') return [...events.values()];
       if (frame[0] === 'EVENT') {

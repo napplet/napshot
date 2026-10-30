@@ -1,17 +1,16 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { Network, isPublicAddress } from '../src/network.js';
+import { Network, isPublicAddress } from '../src/network.ts';
 
-test('public-address policy rejects local, mapped and reserved networks', () => {
+Deno.test('public-address policy rejects local, mapped and reserved networks', () => {
   for (const ip of ['127.0.0.1','10.2.3.4','169.254.169.254','192.168.1.1','100.64.0.1','::1','::ffff:127.0.0.1',
     'fc00::1','fe80::1','2001:db8::1','2002:7f00:1::','224.0.0.1']) assert.equal(isPublicAddress(ip), false, ip);
   assert.equal(isPublicAddress('8.8.8.8'), true);
   assert.equal(isPublicAddress('2606:4700:4700::1111'), true);
 });
 
-test('requests pin hostname DNS, bound bodies and reject redirects/private access', async () => {
+Deno.test('requests pin hostname DNS, bound bodies and reject redirects/private access', async () => {
   const server = http.createServer((req,res) => {
     if (req.url === '/redirect') res.writeHead(302,{location:'http://127.0.0.1/secret'}).end();
     else res.end('fixture');

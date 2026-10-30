@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 /** Adapted from napplet's MIT-licensed Paja screenshot runner; see THIRD_PARTY_NOTICES.md. */
 import { createServer, get, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -58,7 +59,7 @@ export async function capture(html: Buffer, options: CaptureOptions): Promise<Bu
     expired();
     const launched = await chromium.launch({
       executablePath: options.executablePath, chromiumSandbox: true, timeout: options.timeoutMs,
-      env: { PATH: process.env.PATH ?? '/usr/bin:/bin', LANG: 'C.UTF-8' },
+      env: { PATH: Deno.env.get('PATH') ?? '/usr/bin:/bin', LANG: 'C.UTF-8' },
       proxy: { server: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`, bypass: '<-loopback>' },
       args: ['--force-webrtc-ip-handling-policy=disable_non_proxied_udp'],
     });
@@ -120,7 +121,7 @@ async function screenshotFrame(page: Page, options: CaptureOptions): Promise<Buf
   await content.locator('body').waitFor({ state: 'visible' });
   await content.locator('body').evaluate(async () => { await document.fonts.ready; });
   await page.waitForTimeout(options.delayMs);
-  const location = await content.locator('body').evaluate(() => window.location.href);
+  const location = await content.locator('body').evaluate(() => globalThis.location.href);
   if (location !== 'about:srcdoc') throw new Error('Napplet navigated away during capture');
   return frame.screenshot({ type: 'png', timeout: options.timeoutMs });
 }

@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { lookup } from 'node:dns/promises';
 import { isIP, BlockList } from 'node:net';
 import http from 'node:http';
@@ -68,10 +69,11 @@ function requestUrl(input: string, allowPrivate: boolean): URL {
 }
 
 async function resolveAddresses(hostname: string, allowPrivate: boolean) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const addresses = await Promise.race([
     lookup(hostname, { all: true }),
-    new Promise<never>((_, reject) => { const t = setTimeout(() => reject(new Error('DNS timeout')), 10000); t.unref(); }),
-  ]);
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('DNS timeout')), 10000); }),
+  ]).finally(() => clearTimeout(timer));
   if (!addresses.length || (!allowPrivate && addresses.some(a => !isPublicAddress(a.address)))) {
     throw new Error('Non-public network destination rejected');
   }

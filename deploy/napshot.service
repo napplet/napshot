@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Adjust these paths for your checkout and Node 24 installation.
+# Adjust these paths for your checkout and Deno installation.
 WorkingDirectory=%h/Develop/napplet-screenshotter
 EnvironmentFile=%h/Develop/napplet-screenshotter/.env
-ExecStart=/usr/bin/env node dist/src/main.js
+ExecStart=/usr/bin/env deno run --no-prompt --frozen -A src/main.ts
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=300

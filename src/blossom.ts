@@ -1,7 +1,8 @@
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { finalizeEvent } from 'nostr-tools';
-import { Network } from './network.js';
-import type { Manifest } from './protocol.js';
+import type { Network } from './network.ts';
+import type { Manifest } from './protocol.ts';
 
 export const sha256 = (data: Buffer): string => createHash('sha256').update(data).digest('hex');
 /** Dimensions come from persisted PNG bytes, not configuration that may change on restart. */

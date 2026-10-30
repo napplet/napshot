@@ -1,14 +1,14 @@
-import { test } from 'node:test';
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { generateSecretKey } from 'nostr-tools';
-import { loadConfig } from '../src/config.js';
+import { loadConfig } from '../src/config.ts';
 
 const env = {
   NAPSHOT_SECRET_KEY: Buffer.from(generateSecretKey()).toString('hex'),
   NAPSHOT_RELAYS: 'wss://relay.example',
   NAPSHOT_BLOSSOM_SERVERS: 'https://one.example,https://two.example',
 };
-test('operator configuration keeps quorum, key and URL invariants', () => {
+Deno.test('operator configuration keeps quorum, key and URL invariants', () => {
   const config = loadConfig(env);
   assert.equal(config.minReplicas, 2);
   assert.deepEqual(config.trustedAuthors, [config.pubkey]);

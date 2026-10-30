@@ -1,8 +1,10 @@
+import process from 'node:process';
+import type { Buffer } from 'node:buffer';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, writeFileSync, unlinkSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Event } from 'nostr-tools';
-import type { Manifest } from './protocol.js';
+import type { Manifest } from './protocol.ts';
 
 export interface Job {
   id: string; manifest: string; status: string; attempts: number; next_at: number;

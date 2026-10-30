@@ -1,18 +1,18 @@
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event } from 'nostr-tools';
-import { sha256 } from '../src/blossom.js';
-import { capture } from '../src/capture.js';
-import type { Config } from '../src/config.js';
-import { Network } from '../src/network.js';
-import { buildLabel, parseManifest } from '../src/protocol.js';
-import { Relays } from '../src/relay.js';
-import { Store } from '../src/store.js';
-import { Worker } from '../src/worker.js';
-import { blossomFixture, relayFixture } from './fixtures.js';
+import { sha256 } from '../src/blossom.ts';
+import { capture } from '../src/capture.ts';
+import type { Config } from '../src/config.ts';
+import { Network } from '../src/network.ts';
+import { buildLabel, parseManifest } from '../src/protocol.ts';
+import { Relays } from '../src/relay.ts';
+import { Store } from '../src/store.ts';
+import { Worker } from '../src/worker.ts';
+import { blossomFixture, relayFixture } from './fixtures.ts';
 
 const html = Buffer.from('<!doctype html><body style="margin:0;background:#205e47;color:white">Napshot wire test</body>');
 const smallPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6D1EAAAAASUVORK5CYII=', 'base64');
@@ -37,11 +37,11 @@ async function environment(relayTimeoutMs = 250) {
   const config: Config = { key, pubkey: getPublicKey(key), relays: [relay.url],
     blossomServers: [first.origin, second.origin], trustedAuthors: [getPublicKey(key)], dataDir: directory,
     host: '127.0.0.1', port: 0, pollMs: 1000, lookbackSeconds: 86400, minReplicas: 2,
-    capture: { executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium', width: 320, height: 200,
+    capture: { executablePath: Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium', width: 320, height: 200,
       delayMs: 100, timeoutMs: 15000 },
   };
   const logs: unknown[] = [];
-  const worker = (store: Store, render: typeof capture = async () => smallPng) => new Worker(config, store, {
+  const worker = (store: Store, render: typeof capture = () => Promise.resolve(smallPng)) => new Worker(config, store, {
     network: new Network(true), relays: new Relays(config.relays, relayTimeoutMs), capture: render,
     log: (...fields) => logs.push(fields),
   });
@@ -49,10 +49,10 @@ async function environment(relayTimeoutMs = 250) {
     close: async () => { await relay.close(); await first.close(); await second.close(); await rm(directory, { recursive: true }); } };
 }
 
-test('wire pipeline captures root and named revisions, uploads identical PNGs twice, signs and publishes labels', async () => {
+Deno.test('wire pipeline captures root and named revisions, uploads identical PNGs twice, signs and publishes labels', async () => {
   const env = await environment(); const store = new Store(env.directory);
   let captures = 0;
-  const worker = env.worker(store, async (bytes, options) => { captures++; return capture(bytes, options); });
+  const worker = env.worker(store, (bytes, options) => { captures++; return capture(bytes, options); });
   const root = manifest(); const named = manifest({ kind: 35129 });
   const snapshot = manifest({ kind: 5129 });
   const supplied = manifest({ tags: [['screenshot', `x ${'a'.repeat(64)}`, 'm image/png']] });
@@ -88,7 +88,7 @@ test('wire pipeline captures root and named revisions, uploads identical PNGs tw
   } finally { store.close(); await env.close(); }
 });
 
-test('trusted exact-revision labels suppress capture while untrusted labels cannot', async () => {
+Deno.test('trusted exact-revision labels suppress capture while untrusted labels cannot', async () => {
   const env = await environment(); const store = new Store(env.directory);
   const trustedTarget = manifest(); const untrustedTarget = manifest();
   const revisionKey = generateSecretKey();
@@ -100,7 +100,7 @@ test('trusted exact-revision labels suppress capture while untrusted labels cann
     buildLabel(parseManifest(untrustedTarget)!, shot, generateSecretKey(), env.relay.url),
     buildLabel(parseManifest(oldRevision)!, shot, env.config.key, env.relay.url));
   let captures = 0;
-  const worker = env.worker(store, async () => { captures++; return smallPng; });
+  const worker = env.worker(store, () => { captures++; return Promise.resolve(smallPng); });
   try {
     await worker.scan();
     while (await worker.processOne()) { /* Drain only immediately due work. */ }
@@ -111,11 +111,11 @@ test('trusted exact-revision labels suppress capture while untrusted labels cann
   } finally { store.close(); await env.close(); }
 });
 
-test('partial upload stays unpublished and restart reuses the persisted capture and successful replica', async () => {
+Deno.test('partial upload stays unpublished and restart reuses the persisted capture and successful replica', async () => {
   const env = await environment(); let store: Store | undefined = new Store(env.directory);
   env.relay.events.push(manifest()); env.second.behavior.rejectUpload = true;
   let captures = 0;
-  const render: typeof capture = async (bytes, options) => { captures++; return capture(bytes, options); };
+  const render: typeof capture = (bytes, options) => { captures++; return capture(bytes, options); };
   try {
     let worker = env.worker(store, render); await worker.scan(); await worker.processOne();
     assert.equal(env.relay.published.length, 0); assert.equal(captures, 1);
@@ -135,11 +135,11 @@ test('partial upload stays unpublished and restart reuses the persisted capture 
   } finally { store?.close(); await env.close(); }
 });
 
-test('lost relay acknowledgement resumes the exact persisted signed event after restart', async () => {
+Deno.test('lost relay acknowledgement resumes the exact persisted signed event after restart', async () => {
   const env = await environment(); let store: Store | undefined = new Store(env.directory);
   env.relay.events.push(manifest()); env.relay.behavior.publish = 'silent';
   let captures = 0;
-  const render = async () => { captures++; return smallPng; };
+  const render = () => { captures++; return Promise.resolve(smallPng); };
   try {
     let worker = env.worker(store, render); await worker.scan(); await worker.processOne();
     assert.equal(env.relay.published.length, 1); const first = env.relay.published[0];
@@ -152,7 +152,7 @@ test('lost relay acknowledgement resumes the exact persisted signed event after 
   } finally { store?.close(); await env.close(); }
 });
 
-test('corrupt readback cannot satisfy replica quorum', async () => {
+Deno.test('corrupt readback cannot satisfy replica quorum', async () => {
   const env = await environment(); const store = new Store(env.directory);
   env.relay.events.push(manifest()); env.second.behavior.corruptReadback = true;
   try {
@@ -163,7 +163,7 @@ test('corrupt readback cannot satisfy replica quorum', async () => {
   } finally { store.close(); await env.close(); }
 });
 
-test('store locks one owner, supersedes old queued revisions and preserves checkpoints', async () => {
+Deno.test('store locks one owner, supersedes old queued revisions and preserves checkpoints', async () => {
   const env = await environment(); let store: Store | undefined = new Store(env.directory);
   const key = generateSecretKey();
   const old = parseManifest(manifest({ key, createdAt: 100 }))!;
@@ -178,7 +178,7 @@ test('store locks one owner, supersedes old queued revisions and preserves check
   } finally { store?.close(); await env.close(); }
 });
 
-test('relay timeout and CLOSED are errors; negative OK never completes publication', async () => {
+Deno.test('relay timeout and CLOSED are errors; negative OK never completes publication', async () => {
   const relay = await relayFixture(); const client = new Relays([relay.url], 100);
   try {
     relay.behavior.query = 'silent'; await assert.rejects(client.query(relay.url, { kinds: [15129] }), /timeout/);
@@ -187,10 +187,10 @@ test('relay timeout and CLOSED are errors; negative OK never completes publicati
   } finally { await relay.close(); }
 });
 
-test('failed relay scan retains cursor and failed label lookup cannot trigger capture', async () => {
+Deno.test('failed relay scan retains cursor and failed label lookup cannot trigger capture', async () => {
   const env = await environment(); const store = new Store(env.directory);
   let captures = 0;
-  const worker = env.worker(store, async () => { captures++; return smallPng; });
+  const worker = env.worker(store, () => { captures++; return Promise.resolve(smallPng); });
   const event = manifest();
   try {
     env.relay.events.push(event); await worker.scan(); const cursor = store.cursor(env.relay.url);
@@ -201,7 +201,7 @@ test('failed relay scan retains cursor and failed label lookup cannot trigger ca
 });
 
 
-test('scan paginates a full page without dropping equal-timestamp boundary events', async () => {
+Deno.test('scan paginates a full page without dropping equal-timestamp boundary events', async () => {
   const env = await environment(10000); const store = new Store(env.directory);
   const key = generateSecretKey(); const createdAt = Math.floor(Date.now() / 1000) - 5;
   for (let index = 0; index < 501; index++) {
@@ -215,7 +215,7 @@ test('scan paginates a full page without dropping equal-timestamp boundary event
   } finally { store.close(); await env.close(); }
 });
 
-test('first-scan outage preserves its initial backfill boundary across configuration changes and restart', async () => {
+Deno.test('first-scan outage preserves its initial backfill boundary across configuration changes and restart', async () => {
   const env = await environment(); let store: Store | undefined = new Store(env.directory);
   env.relay.behavior.query = 'closed'; env.config.lookbackSeconds = 3600;
   try {

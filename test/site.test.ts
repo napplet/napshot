@@ -2,9 +2,8 @@ import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import test from "node:test";
 import { chromium } from "playwright";
-import { createSite } from "../src/server.js";
+import { createSite } from "../src/server.ts";
 
 const signer = "a".repeat(64);
 const status = {
@@ -29,10 +28,10 @@ async function fixture() {
   };
 }
 
-test("explainer works on desktop and mobile with keyboard, clipboard, and live status", async () => {
+Deno.test("explainer works on desktop and mobile with keyboard, clipboard, and live status", async () => {
   const site = await fixture();
   const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH ?? "/usr/bin/chromium",
+    executablePath: Deno.env.get('CHROMIUM_PATH') ?? "/usr/bin/chromium",
   });
   try {
     const page = await browser.newPage();
@@ -51,8 +50,9 @@ test("explainer works on desktop and mobile with keyboard, clipboard, and live s
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "clipboard", {
         value: {
-          writeText: async (value: string) => {
+          writeText: (value: string) => {
             document.documentElement.dataset.copied = value;
+            return Promise.resolve();
           },
         },
       });
@@ -105,10 +105,10 @@ test("explainer works on desktop and mobile with keyboard, clipboard, and live s
   }
 });
 
-test("unavailable status and clipboard preserve readable instructions; API strings cannot inject markup", async () => {
+Deno.test("unavailable status and clipboard preserve readable instructions; API strings cannot inject markup", async () => {
   const site = await fixture();
   const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH ?? "/usr/bin/chromium",
+    executablePath: Deno.env.get('CHROMIUM_PATH') ?? "/usr/bin/chromium",
   });
   try {
     const page = await browser.newPage();
@@ -118,8 +118,8 @@ test("unavailable status and clipboard preserve readable instructions; API strin
     await page.addInitScript(() =>
       Object.defineProperty(navigator, "clipboard", {
         value: {
-          writeText: async () => {
-            throw new Error("denied");
+          writeText: () => {
+            return Promise.reject(new Error("denied"));
           },
         },
       }),
@@ -178,7 +178,7 @@ test("unavailable status and clipboard preserve readable instructions; API strin
   }
 });
 
-test("actual server serves the SPA, public assets, and exact skill with security headers", async () => {
+Deno.test("actual server serves the SPA, public assets, and exact skill with security headers", async () => {
   const site = await fixture();
   try {
     for (const [path, filename, contentType] of [
@@ -215,12 +215,13 @@ test("actual server serves the SPA, public assets, and exact skill with security
       counts: { pending: 0, done: 0, failed: 0 },
       lastScan: null,
     });
-    assert.equal((await fetch(site.url + "/healthz")).status, 503);
-    assert.equal((await fetch(site.url + "/.env")).status, 404);
-    assert.equal(
-      (await fetch(site.url + "/api/status", { method: "POST" })).status,
-      405,
-    );
+    for (const [path, method, expectedStatus] of [
+      ["/healthz", "GET", 503], ["/.env", "GET", 404], ["/api/status", "POST", 405],
+    ] as const) {
+      const response = await fetch(site.url + path, { method });
+      assert.equal(response.status, expectedStatus);
+      await response.body?.cancel();
+    }
   } finally {
     await site.close();
   }

@@ -1,0 +1,187 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:@kehto/paja@0.21.0": "0.21.0_@napplet+core@0.34.0_@napplet+nap@0.34.0_nostr-tools@2.23.3_typescript@5.9.3",
+    "npm:@napplet/core@0.34.0": "0.34.0",
+    "npm:@napplet/nap@0.34.0": "0.34.0_typescript@5.9.3",
+    "npm:nostr-tools@2.23.3": "2.23.3_typescript@5.9.3",
+    "npm:playwright@1.61.0": "1.61.0",
+    "npm:typescript@5.9.3": "5.9.3"
+  },
+  "npm": {
+    "@kehto/acl@0.19.1_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3": {
+      "integrity": "sha512-4Ib3Gql2AtR1mmjyaLm0VATLIQkbZvCXV31NcaD6jAWZoeQy0dHg+6iSDu8XPGroIJdBMbPUDfGFGwVMi17Gmw==",
+      "dependencies": [
+        "@napplet/core",
+        "@napplet/nap"
+      ]
+    },
+    "@kehto/firewall@0.6.1_@napplet+core@0.34.0": {
+      "integrity": "sha512-TlrwRjVlmEWdx8CpUeaMjlVoVQ7N2cGLxYKyK/b03eoUNzUjK8xvwMuWrbRH2gJJLP0c8k51YipWF1tedpsNfA==",
+      "dependencies": [
+        "@napplet/core"
+      ]
+    },
+    "@kehto/nip@0.7.0_nostr-tools@2.23.3_typescript@5.9.3": {
+      "integrity": "sha512-uDi2fvs8gr2jhhNKU8JbrDaq1cqRpAHdxDWBpoLv59tVTTFcTul/bWpT0aAHcq/SzHgT+3IHT0oIuqJXpqCwhw==",
+      "dependencies": [
+        "@noble/hashes",
+        "nostr-tools"
+      ]
+    },
+    "@kehto/paja@0.21.0_@napplet+core@0.34.0_@napplet+nap@0.34.0_nostr-tools@2.23.3_typescript@5.9.3": {
+      "integrity": "sha512-Tk5X3XKVjXzIEhXJWtxpmlNNwCv+jcmfWyuZIby3V/dm+uB4eHjwhYijhzoZvUaHY1DmawCI3wRvbKjCVQyydw==",
+      "dependencies": [
+        "@kehto/acl",
+        "@kehto/firewall",
+        "@kehto/nip",
+        "@kehto/runtime@0.24.1_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3",
+        "@kehto/services",
+        "@kehto/shell",
+        "@kehto/wm",
+        "@napplet/core",
+        "@napplet/nap",
+        "nostr-tools"
+      ]
+    },
+    "@kehto/runtime@0.24.1_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3": {
+      "integrity": "sha512-cEaGbhVlVss6xZJAiGFQAssFaG5PXtPS/kZL/EjsgtT7KX6chybXialLwAj9HUGrIADUO2S2SMY36zvIzmH5Ew==",
+      "dependencies": [
+        "@kehto/acl",
+        "@kehto/firewall",
+        "@napplet/core",
+        "@napplet/nap",
+        "@noble/curves",
+        "@noble/hashes"
+      ]
+    },
+    "@kehto/runtime@0.26.0_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3": {
+      "integrity": "sha512-sxXK7CsEp9cStnU13HGEAQimKF1H+NBuNzfH97DCwrlIWM0JVUxQh2KueC6RCRNSOrzXcHAOw64IiDAsX/lmpg==",
+      "dependencies": [
+        "@kehto/acl",
+        "@kehto/firewall",
+        "@napplet/core",
+        "@napplet/nap",
+        "@noble/curves",
+        "@noble/hashes"
+      ]
+    },
+    "@kehto/services@0.24.2_@napplet+core@0.34.0_@napplet+nap@0.34.0_nostr-tools@2.23.3_typescript@5.9.3": {
+      "integrity": "sha512-qvcokTHb1JKKy+kXZFTqCKV7Nk8ob0rC3Brjxeyfn0dAhqSGHyb2AUgkWe1W1V9aV0FHboHd2TBy3wxIOQzisg==",
+      "dependencies": [
+        "@kehto/runtime@0.26.0_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3",
+        "@napplet/core",
+        "@napplet/nap",
+        "nostr-tools"
+      ],
+      "optionalPeers": [
+        "nostr-tools"
+      ]
+    },
+    "@kehto/shell@0.24.4_@napplet+core@0.34.0_@napplet+nap@0.34.0_nostr-tools@2.23.3_typescript@5.9.3": {
+      "integrity": "sha512-MVH5exjMosTAlbd3TCziTBqj50d7NaEJrjW5mQqG1kLtFZ8hREEzkkdaSpCiBcIJ28507RIv7tNv+W/1zYgdsg==",
+      "dependencies": [
+        "@kehto/acl",
+        "@kehto/runtime@0.26.0_@napplet+core@0.34.0_@napplet+nap@0.34.0_typescript@5.9.3",
+        "@napplet/core",
+        "@napplet/nap",
+        "nostr-tools"
+      ]
+    },
+    "@kehto/wm@0.0.2": {
+      "integrity": "sha512-8cjneY8paT9jcBRE/XX1oEA0pWtojkO9BESQ7UMTL9gIc+2zClXGLmY0HwdHMHMeZ3+c1sIcxsF08IHVwI3pDQ=="
+    },
+    "@napplet/core@0.34.0": {
+      "integrity": "sha512-oU56Qhkc9+VI6CqvekRVbAQkHy2DGzLMGxI3EirDJtfBtXWu6kmvhUkI5DkU3hpfa7MwYpARL4usud5sWa6ZdA=="
+    },
+    "@napplet/nap@0.34.0_typescript@5.9.3": {
+      "integrity": "sha512-AzdF8ejO+QbSDEQw2rrQM2ll9fvuPaoxiwu1s1jp+1OwDo5seYqCgevBYjLiQVOA1NzslXnYNVtWxedACq3beQ==",
+      "dependencies": [
+        "@napplet/core",
+        "nostr-tools"
+      ]
+    },
+    "@noble/ciphers@2.1.1": {
+      "integrity": "sha512-bysYuiVfhxNJuldNXlFEitTVdNnYUc+XNJZd7Qm2a5j1vZHgY+fazadNFWFaMK/2vye0JVlxV3gHmC0WDfAOQw=="
+    },
+    "@noble/curves@2.0.1": {
+      "integrity": "sha512-vs1Az2OOTBiP4q0pwjW5aF0xp9n4MxVrmkFBxc6EKZc6ddYx5gaZiAsZoq0uRRXWbi3AT/sBqn05eRPtn1JCPw==",
+      "dependencies": [
+        "@noble/hashes"
+      ]
+    },
+    "@noble/hashes@2.0.1": {
+      "integrity": "sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw=="
+    },
+    "@scure/base@2.0.0": {
+      "integrity": "sha512-3E1kpuZginKkek01ovG8krQ0Z44E3DHPjc5S2rjJw9lZn3KSQOs8S7wqikF/AH7iRanHypj85uGyxk0XAyC37w=="
+    },
+    "@scure/bip32@2.0.1": {
+      "integrity": "sha512-4Md1NI5BzoVP+bhyJaY3K6yMesEFzNS1sE/cP+9nuvE7p/b0kx9XbpDHHFl8dHtufcbdHRUUQdRqLIPHN/s7yA==",
+      "dependencies": [
+        "@noble/curves",
+        "@noble/hashes",
+        "@scure/base"
+      ]
+    },
+    "@scure/bip39@2.0.1": {
+      "integrity": "sha512-PsxdFj/d2AcJcZDX1FXN3dDgitDDTmwf78rKZq1a6c1P1Nan1X/Sxc7667zU3U+AN60g7SxxP0YCVw2H/hBycg==",
+      "dependencies": [
+        "@noble/hashes",
+        "@scure/base"
+      ]
+    },
+    "fsevents@2.3.2": {
+      "integrity": "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==",
+      "os": ["darwin"],
+      "scripts": true
+    },
+    "nostr-tools@2.23.3_typescript@5.9.3": {
+      "integrity": "sha512-AALyt9k8xPdF4UV2mlLJ2mgCn4kpTB0DZ8t2r6wjdUh6anfx2cTVBsHUlo9U0EY/cKC5wcNyiMAmRJV5OVEalA==",
+      "dependencies": [
+        "@noble/ciphers",
+        "@noble/curves",
+        "@noble/hashes",
+        "@scure/base",
+        "@scure/bip32",
+        "@scure/bip39",
+        "nostr-wasm",
+        "typescript"
+      ],
+      "optionalPeers": [
+        "typescript"
+      ]
+    },
+    "nostr-wasm@0.1.0": {
+      "integrity": "sha512-78BTryCLcLYv96ONU8Ws3Q1JzjlAt+43pWQhIl86xZmWeegYCNLPml7yQ+gG3vR6V5h4XGj+TxO+SS5dsThQIA=="
+    },
+    "playwright-core@1.61.0": {
+      "integrity": "sha512-caX7TrY3Ml6egyDX0WUcTHDxodl/b51y5wJOdCEA36QviK/s2g081hvmGs8eaE3DWb6NYZQ6BjO/QkNRPenoPA==",
+      "bin": true
+    },
+    "playwright@1.61.0": {
+      "integrity": "sha512-Z+7BeeqQPRRzklHsVFP4KTGIyMxKUmfeRA4WisM6G3/XW6nwGeX6fX9qYaDa+CiUqpOkb2f6X3nar05R3kSuJQ==",
+      "dependencies": [
+        "playwright-core"
+      ],
+      "optionalDependencies": [
+        "fsevents"
+      ],
+      "bin": true
+    },
+    "typescript@5.9.3": {
+      "integrity": "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==",
+      "bin": true
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@kehto/paja@0.21.0",
+      "npm:@napplet/core@0.34.0",
+      "npm:@napplet/nap@0.34.0",
+      "npm:nostr-tools@2.23.3",
+      "npm:playwright@1.61.0",
+      "npm:typescript@5.9.3"
+    ]
+  }
+}

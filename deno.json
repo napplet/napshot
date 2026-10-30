@@ -1,0 +1,51 @@
+{
+  "name": "@napplet/napshot",
+  "version": "0.1.0",
+  "nodeModulesDir": "auto",
+  "minimumDependencyAge": "P7D",
+  "imports": {
+    "@kehto/paja": "npm:@kehto/paja@0.21.0",
+    "@napplet/core": "npm:@napplet/core@0.34.0",
+    "@napplet/nap": "npm:@napplet/nap@0.34.0",
+    "nostr-tools": "npm:nostr-tools@2.23.3",
+    "playwright": "npm:playwright@1.61.0",
+    "typescript": "npm:typescript@5.9.3"
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "dom",
+      "dom.iterable"
+    ],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "tasks": {
+    "start": "deno run --no-prompt --frozen -A --env-file=.env src/main.ts",
+    "preview": "deno run --no-prompt --frozen -A src/main.ts --site-only",
+    "keygen": "deno eval --frozen 'import { generateSecretKey } from \"nostr-tools\"; console.log(Array.from(generateSecretKey(), b => b.toString(16).padStart(2, \"0\")).join(\"\"))'",
+    "lint": "deno lint && deno run --no-prompt --frozen --allow-read --allow-env scripts/lint.ts",
+    "typecheck": "deno check --frozen src/main.ts test/*.test.ts scripts/*.ts",
+    "test": "deno test --no-prompt --frozen -A test/",
+    "check": "deno task lint && deno task typecheck && deno task test"
+  },
+  "lint": {
+    "include": [
+      "src/",
+      "test/",
+      "scripts/",
+      "public/app.js"
+    ]
+  },
+  "fmt": {
+    "lineWidth": 150,
+    "singleQuote": true
+  },
+  "exclude": [
+    "node_modules/",
+    "dist/",
+    ".omx/"
+  ],
+  "exports": "./src/main.ts"
+}

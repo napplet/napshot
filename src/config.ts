@@ -1,13 +1,14 @@
+import { Buffer } from 'node:buffer';
 import { getPublicKey } from 'nostr-tools';
-import { serverOrigin } from './blossom.js';
-import { HASH } from './protocol.js';
+import { serverOrigin } from './blossom.ts';
+import { HASH } from './protocol.ts';
 
 export interface Config {
   key: Uint8Array; pubkey: string; relays: string[]; blossomServers: string[]; trustedAuthors: string[];
   dataDir: string; host: string; port: number; pollMs: number; lookbackSeconds: number; minReplicas: number;
   capture: { executablePath?: string; width: number; height: number; delayMs: number; timeoutMs: number };
 }
-function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number, max: number): number {
+function integer(env: Record<string, string | undefined>, name: string, fallback: number, min: number, max: number): number {
   const value = Number(env[name] ?? fallback);
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`Invalid ${name}: expected ${min}..${max}`);
   return value;
@@ -15,7 +16,7 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback: number, min: nu
 function list(value: string | undefined): string[] { return [...new Set((value ?? '').split(',').map(v => v.trim()).filter(Boolean))]; }
 
 /** Parse operator configuration once. Keys stay in the server process and never enter status responses. */
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+export function loadConfig(env: Record<string, string | undefined> = Deno.env.toObject()): Config {
   const key = secretKey(env);
   const pubkey = getPublicKey(key);
   const relays = list(env.NAPSHOT_RELAYS).map(value => {
@@ -40,12 +41,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-function secretKey(env: NodeJS.ProcessEnv): Uint8Array {
+function secretKey(env: Record<string, string | undefined>): Uint8Array {
   if (!HASH.test(env.NAPSHOT_SECRET_KEY ?? '')) throw new Error('NAPSHOT_SECRET_KEY must be a 64-character hex secret key');
   return Uint8Array.from(Buffer.from(env.NAPSHOT_SECRET_KEY!, 'hex'));
 }
 
-function captureConfig(env: NodeJS.ProcessEnv): Config['capture'] {
+function captureConfig(env: Record<string, string | undefined>): Config['capture'] {
   return {
     executablePath: env.NAPSHOT_CHROMIUM ?? '/usr/bin/chromium',
     width: integer(env, 'NAPSHOT_WIDTH', 1200, 200, 4096), height: integer(env, 'NAPSHOT_HEIGHT', 750, 160, 4096),

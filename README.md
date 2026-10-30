@@ -4,8 +4,7 @@
 
 **Missing screenshots for Nostr napplets, captured and labeled.**
 
-[![Node.js 24+](https://img.shields.io/badge/Node.js-24%2B-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](package.json)
-[![pnpm 10.8](https://img.shields.io/badge/pnpm-10.8-F69220?style=for-the-badge&logo=pnpm&logoColor=white)](package.json)
+[![Deno 2.9.6+](https://img.shields.io/badge/Deno-2.9.6%2B-000000?style=for-the-badge&logo=deno&logoColor=white)](deno.json)
 [![GitHub stars](https://img.shields.io/github/stars/napplet/napshot?style=for-the-badge)](https://github.com/napplet/napshot/stargazers)
 
 [Quick start](#quick-start) · [Shell integration](#shell-integration) · [Configuration](#configuration) · [Operations](#operations)
@@ -27,15 +26,15 @@ authentication, or interaction may show an empty or loading state. Snapshots (`5
 
 ## Quick start
 
-Requires **Node.js 24+**, **pnpm 10.8**, and **Chromium with a working sandbox**.
+Requires **Deno 2.9.6+** and **Chromium with a working sandbox**.
+Deno installs dependencies and runs the TypeScript service directly; no Node.js or pnpm is required.
 The default browser path is `/usr/bin/chromium`; set `NAPSHOT_CHROMIUM` for another installation.
 Napshot does not download a browser or disable its sandbox.
 
 ```sh
 git clone https://github.com/napplet/napshot.git
 cd napshot
-pnpm install --frozen-lockfile
-pnpm build
+deno install --frozen
 cp .env.example .env
 chmod 600 .env
 ```
@@ -51,14 +50,13 @@ Edit `.env` and replace the example endpoints with your own configuration:
 To generate a dedicated key locally:
 
 ```sh
-node --input-type=module -e \
-  'import {generateSecretKey} from "nostr-tools"; console.log(Buffer.from(generateSecretKey()).toString("hex"))'
+deno task keygen
 ```
 
 Copy the key into `.env`, keep it private, and start the service:
 
 ```sh
-node --env-file=.env dist/src/main.js
+deno task start
 ```
 
 Open **<http://127.0.0.1:3080>** for the explainer and instance status. The startup log
@@ -67,7 +65,7 @@ and `/api/status` expose the public signer key that shell operators can verify a
 To preview the page without a signing key or a running worker:
 
 ```sh
-node dist/src/main.js --site-only
+deno task preview
 ```
 
 ## Shell integration
@@ -78,6 +76,7 @@ Install the coding-agent skill:
 npx skills add napplet/napshot
 ```
 
+The optional skills installer uses `npx`; it is separate from the Deno service.
 Then ask your agent: “Use `$napshot-shell` to add trusted screenshot fallbacks to our napplet picker.”
 
 The [skill](skills/napshot-shell/SKILL.md) covers discovery, signer trust, image verification,
@@ -136,7 +135,7 @@ origins do not prove independent infrastructure ownership.
 
 Use the [systemd user-service template](deploy/napshot.service). Update `WorkingDirectory`
 and `EnvironmentFile` to your clone location: the template uses `~/Develop/napplet-screenshotter`,
-while the quick start creates `napshot/`. Set `ExecStart` to an absolute Node.js 24 binary
+while the quick start creates `napshot/`. Set `ExecStart` to an absolute Deno binary
 if your installation is outside the service PATH.
 
 ```sh
@@ -148,7 +147,19 @@ journalctl --user -u napshot.service -f
 ```
 
 The user manager must remain running after logout for the service to continue. Configure
-lingering under your host’s service policy if needed. Building the project does not install the service.
+lingering under your host’s service policy if needed. Installing dependencies does not install the service.
+
+The service runs Deno with `--no-prompt -A`: it needs filesystem access for SQLite and
+preview assets, network access for relays and Blossom, and subprocess access for Chromium.
+Run it as a dedicated unprivileged user; the browser’s sandbox and capture restrictions remain enabled.
+
+### Migrate an existing installation
+
+Stop the old worker before switching runtimes. Keep the same `.env`, signing key, and
+`NAPSHOT_DATA_DIR`, install the locked dependencies with Deno, and update the service command.
+The SQLite schema is unchanged, so queued captures, signed labels, upload receipts, and
+relay cursors resume in place. Never run the old and new workers against the same data directory.
+To roll back, stop Deno, restore the previous code and service command, and reuse that data directory.
 
 <details>
 <summary><strong>Retries, recovery, and monitoring</strong></summary>
@@ -208,15 +219,16 @@ sandbox and request interception are not a replacement for host isolation agains
 ## Development
 
 ```sh
-pnpm check
+deno task check
 ```
 
-This runs structural lint, JavaScript syntax checks, strict TypeScript checks, a build,
-and unit/integration tests with real Chromium. Tests use temporary keys and local relay
-and Blossom fixtures, including restart and failure cases; they do not publish publicly.
+This runs Deno lint, the structural guard, strict TypeScript checks, and native
+Deno unit/integration tests with real Chromium. No compilation step or `dist/` directory is needed.
+Tests use temporary keys and local relay and Blossom fixtures, including restart and failure cases;
+they do not publish publicly.
 Browser tests use `/usr/bin/chromium`, or `CHROMIUM_PATH` when set.
 
-When contributing, keep changes focused and run `pnpm check` before opening a pull request.
+When contributing, keep changes focused and run `deno task check` before opening a pull request.
 For protocol changes, update the [wire contract](docs/protocol.md) and
 [shell skill](skills/napshot-shell/SKILL.md) together.
 

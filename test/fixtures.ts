@@ -1,10 +1,11 @@
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { matchFilter, verifyEvent, type Event, type Filter } from 'nostr-tools';
-import { sha256 } from '../src/blossom.js';
+import { sha256 } from '../src/blossom.ts';
 
 async function listen(server: Server): Promise<number> {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));

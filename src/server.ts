@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import type { Worker } from './worker.js';
+import type { Worker } from './worker.ts';
 
 /** Serve the public explainer and redacted operator status, with no write endpoints. */
 export function createSite(worker?: Worker) {
@@ -40,7 +40,7 @@ function sendStatic(path: string, response: ServerResponse): void {
   };
   const file = files[path];
   if (!file) { response.writeHead(404).end('Not found'); return; }
-  void readFile(new URL(`../../public/${file[0]}`, import.meta.url)).then(bytes => {
+  void readFile(new URL(`../public/${file[0]}`, import.meta.url)).then(bytes => {
     response.writeHead(200, { 'content-type': file[1] }); response.end(bytes);
   }).catch(() => response.writeHead(500).end('Static file unavailable'));
 }

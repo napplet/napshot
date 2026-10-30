@@ -1,11 +1,12 @@
+import { Buffer } from 'node:buffer';
 import type { Event } from 'nostr-tools';
-import { fetchArtifact, pngDimensions, sha256, uploadScreenshot } from './blossom.js';
-import { capture } from './capture.js';
-import type { Config } from './config.js';
-import { Network } from './network.js';
-import { buildLabel, hasScreenshot, isScreenshotLabel, KINDS, parseManifest, type Manifest } from './protocol.js';
-import { Relays } from './relay.js';
-import { Store, type Job } from './store.js';
+import { fetchArtifact, pngDimensions, sha256, uploadScreenshot } from './blossom.ts';
+import { capture } from './capture.ts';
+import type { Config } from './config.ts';
+import { Network } from './network.ts';
+import { buildLabel, hasScreenshot, isScreenshotLabel, KINDS, parseManifest, type Manifest } from './protocol.ts';
+import { Relays } from './relay.ts';
+import type { Store, Job } from './store.ts';
 
 export type Log = (level: string, message: string, fields?: Record<string, unknown>) => void;
 const defaultLog: Log = (level, message, fields) => console.log(JSON.stringify({ time: new Date().toISOString(), level, message, ...fields }));

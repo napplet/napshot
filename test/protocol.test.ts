@@ -1,7 +1,6 @@
-import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
-import { parseManifest, hasScreenshot, buildLabel, isScreenshotLabel } from '../src/protocol.js';
+import { parseManifest, hasScreenshot, buildLabel, isScreenshotLabel } from '../src/protocol.ts';
 
 const key = generateSecretKey();
 const hash = 'a'.repeat(64);
@@ -9,7 +8,7 @@ const manifest = (kind = 15129, tags: string[][] = []) => finalizeEvent({
   kind, created_at: 123, content: 'A napplet', tags: [['x', hash], ...tags],
 }, key);
 
-test('only signed current root and named manifests enter the queue', () => {
+Deno.test('only signed current root and named manifests enter the queue', () => {
   assert.ok(parseManifest(manifest()));
   assert.ok(parseManifest(manifest(35129, [['d', 'clock']])));
   for (const event of [manifest(5129), manifest(35129), manifest(15129, [['d', 'oops']]),
@@ -18,7 +17,7 @@ test('only signed current root and named manifests enter the queue', () => {
   assert.equal(parseManifest(invalid), null);
 });
 
-test('only usable screenshot metadata suppresses capture', () => {
+Deno.test('only usable screenshot metadata suppresses capture', () => {
   assert.equal(hasScreenshot([['screenshot', `x ${hash}`, 'm image/png']]), true);
   assert.equal(hasScreenshot([['screenshot', `x ${hash}`]]), true);
   for (const tag of [['screenshot'], ['screenshot', 'https://a.test/a.png'],
@@ -27,7 +26,7 @@ test('only usable screenshot metadata suppresses capture', () => {
   }
 });
 
-test('labels carry exact revision, screenshot bytes metadata and NIP-32 namespace', () => {
+Deno.test('labels carry exact revision, screenshot bytes metadata and NIP-32 namespace', () => {
   const event = manifest(35129, [['d', 'clock']]);
   const parsed = parseManifest(event)!;
   const label = buildLabel(parsed, { hash, size: 300, width: 1200, height: 750,
@@ -39,7 +38,7 @@ test('labels carry exact revision, screenshot bytes metadata and NIP-32 namespac
   assert.equal(isScreenshotLabel(label, event.id, []), false);
 });
 
-test('malformed media cannot suppress captures through another valid screenshot tag', () => {
+Deno.test('malformed media cannot suppress captures through another valid screenshot tag', () => {
   const target = manifest();
   const label = finalizeEvent({kind:1985,created_at:123,content:'',tags:[
     ['L','#screenshot'],['l','b'.repeat(64),'#screenshot'],['e',target.id],

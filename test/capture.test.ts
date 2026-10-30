@@ -1,16 +1,16 @@
+import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import test from 'node:test';
 import { chromium } from 'playwright';
-import { capture } from '../src/capture.js';
+import { capture } from '../src/capture.ts';
 
 const options = {
-  executablePath: process.env.CHROMIUM_PATH ?? '/usr/bin/chromium',
+  executablePath: Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium',
   width: 320, height: 200, delayMs: 200, timeoutMs: 15_000,
 };
 
-test('capture renders through the real Paja shim and crops to the napplet', async () => {
+Deno.test('capture renders through the real Paja shim and crops to the napplet', async () => {
   const html = Buffer.from(`<!doctype html><html><body style="margin:0;min-height:100vh;background:rgb(220,10,10)">
     <script>if (window.napplet) document.body.style.background = 'rgb(20,180,80)';</script>
     </body></html>`);
@@ -38,7 +38,7 @@ test('capture renders through the real Paja shim and crops to the napplet', asyn
   }
 });
 
-test('capture blocks HTTP and WebSocket egress from a hostile artifact', async () => {
+Deno.test('capture blocks HTTP and WebSocket egress from a hostile artifact', async () => {
   let requests = 0;
   const sink = createServer((_request, response) => { requests++; response.end('leaked'); });
   sink.on('upgrade', (_request, socket) => { requests++; socket.destroy(); });
@@ -62,7 +62,7 @@ test('capture blocks HTTP and WebSocket egress from a hostile artifact', async (
   }
 });
 
-test('a runaway renderer times out and the next capture succeeds', async () => {
+Deno.test('a runaway renderer times out and the next capture succeeds', async () => {
   const started = Date.now();
   await assert.rejects(capture(Buffer.from('<body><script>while(true){}</script></body>'), {
     ...options, timeoutMs: 1500,
@@ -72,7 +72,7 @@ test('a runaway renderer times out and the next capture succeeds', async () => {
   assert.equal(next.subarray(1, 4).toString(), 'PNG');
 });
 
-test('self-navigation cannot escape the network boundary or produce a browser error screenshot', async () => {
+Deno.test('self-navigation cannot escape the network boundary or produce a browser error screenshot', async () => {
   let requests = 0;
   const sink = createServer((_request, response) => { requests++; response.end('<body>Remote</body>'); });
   await new Promise<void>((resolve) => sink.listen(0, '127.0.0.1', resolve));
@@ -90,6 +90,6 @@ test('self-navigation cannot escape the network boundary or produce a browser er
   }
 });
 
-test('invalid dimensions fail before launching Chromium', async () => {
+Deno.test('invalid dimensions fail before launching Chromium', async () => {
   await assert.rejects(capture(Buffer.from('<body>Bad options</body>'), { ...options, width: 0 }), /width/);
 });
