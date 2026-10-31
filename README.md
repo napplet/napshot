@@ -131,6 +131,13 @@ origins do not prove independent infrastructure ownership.
 
 ## Operations
 
+### Deploy with Coolify
+
+The [Coolify runbook](docs/coolify.md) covers the container deployment, persistent
+storage, and exact environment settings. The first deployment serves the page
+with the worker disabled; add your signing key and endpoints in Coolify, set
+`NAPSHOT_SITE_ONLY=false`, and redeploy to start processing manifests.
+
 ### Run persistently
 
 Use the [systemd user-service template](deploy/napshot.service). Update `WorkingDirectory`

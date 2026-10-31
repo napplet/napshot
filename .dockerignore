@@ -1,0 +1,9 @@
+.git
+.codebase-memory
+.env
+.env.*
+node_modules
+data
+dist
+test
+.omx

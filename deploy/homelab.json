@@ -1,0 +1,30 @@
+{
+  "name": "napshot",
+  "description": "Napplet screenshot worker and public status page; configure worker credentials in Coolify",
+  "git_repository": "https://github.com/napplet/napshot.git",
+  "git_branch": "main",
+  "build_pack": "dockercompose",
+  "docker_compose_location": "/compose.yaml",
+  "ports_exposes": "3080",
+  "server_name": "beta-ssh",
+  "project_name": "Homelab Apps",
+  "environment_name": "production",
+  "private_key_name": "",
+  "health_check_enabled": false,
+  "instant_deploy": true,
+  "docker_compose_domains": [
+    {
+      "name": "napshot",
+      "domain": "http://napshot.192.168.151.147.sslip.io"
+    }
+  ],
+  "environment_variables": [
+    {
+      "key": "NAPSHOT_SECCOMP_PROFILE",
+      "value": "/srv/homelab/napshot/chromium-seccomp.json",
+      "is_literal": true,
+      "is_preview": false,
+      "is_buildtime": false
+    }
+  ]
+}

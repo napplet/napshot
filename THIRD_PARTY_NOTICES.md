@@ -1,5 +1,11 @@
 # Third-party notices
 
+`deploy/chromium-seccomp.json` contains the Chromium seccomp profile from
+[Microsoft Playwright](https://github.com/microsoft/playwright/blob/main/utils/docker/seccomp_profile.json),
+retrieved October 31, 2026. Copyright Microsoft Corporation, licensed under
+Apache-2.0; see [the license](deploy/PLAYWRIGHT-LICENSE) (repository path
+`deploy/PLAYWRIGHT-LICENSE`).
+
 `src/capture.ts` adapts the iframe capture and disposable Paja preview flow from
 `packages/conformance-cli/src/screenshot.ts` and `screenshot-preview.ts` in
 [napplet/napplet](https://github.com/napplet/napplet). The original local source was
