@@ -14,6 +14,7 @@ const defaultLog: Log = (level, message, fields) => console.log(JSON.stringify({
 /** Poll durable relay windows and advance checkpoints only after complete, persisted ingestion. */
 export class Worker {
   lastScan: number | null = null;
+  readonly relayErrors: Record<string, string> = {};
   constructor(readonly config: Config, readonly store: Store,
     private readonly dependencies: { relays?: Relays; network?: Network; capture?: typeof capture; log?: Log } = {}) {}
   private get relays(): Relays { return this.dependencies.relays ?? new Relays(this.config.relays); }
@@ -22,12 +23,16 @@ export class Worker {
 
   async scan(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
-    let complete = true;
-    for (const relay of this.config.relays) {
-      try { await this.scanRelay(relay, now); }
-      catch (error) { complete = false; this.log('error', 'relay_scan_failed', { relay, error: message(error) }); }
-    }
-    if (complete) this.lastScan = now;
+    await Promise.all(this.config.relays.map(async relay => {
+      try {
+        await this.scanRelay(relay, now);
+        this.lastScan = Math.floor(Date.now() / 1000);
+        delete this.relayErrors[relay];
+      } catch (error) {
+        this.relayErrors[relay] = message(error);
+        this.log('error', 'relay_scan_failed', { relay, error: message(error) });
+      }
+    }));
   }
   private async scanRelay(relay: string, now: number): Promise<void> {
     let baseline = this.store.cursor(relay);
@@ -70,10 +75,18 @@ export class Worker {
     return true;
   }
   private async alreadyLabeled(manifest: Manifest): Promise<boolean> {
-    const results = await Promise.all(this.config.relays.map(relay => this.relays.query(relay, {
+    const results = await Promise.allSettled(this.config.relays.map(relay => this.relays.query(relay, {
       kinds: [1985], '#e': [manifest.event.id], '#L': ['#screenshot'], authors: this.config.trustedAuthors, limit: 500,
     })));
-    return results.flat().some(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors));
+    const replies = results.flatMap((result, index) => {
+      if (result.status === 'fulfilled') return [result.value];
+      this.log('warn', 'relay_label_query_failed', {
+        relay: this.config.relays[index], id: manifest.event.id, error: message(result.reason),
+      });
+      return [];
+    });
+    if (!replies.length) throw new Error('No relay answered screenshot label lookup');
+    return replies.flat().some(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors));
   }
   private async process(job: Job): Promise<void> {
     if (job.label) {

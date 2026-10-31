@@ -189,8 +189,11 @@ To roll back, stop Deno, restore the previous code and service command, and reus
 - Every configured Blossom server is attempted. Only replicas that pass descriptor and
   readback-hash checks are advertised. Below quorum, the PNG and successful replicas are
   retained for retry. A capture is discarded after completion; metadata remains for deduplication.
-- All configured relays must answer the existing-label query before a new capture. An
-  unavailable relay delays jobs instead of treating an incomplete check as proof of absence.
+- Relays scan concurrently with independent cursors. One failed relay cannot veto
+  manifests or trusted labels returned by another. Label lookups use successful,
+  signature-checked replies; if every lookup fails, the job retries without capturing.
+  A timeout is a failed exchange, never an empty reply. Even a successful empty reply
+  cannot prove global label absence, so duplicates remain possible across relay partitions.
 - The data directory allows one worker on one host. A stale PID lock is recovered after
   a crash. Do not share a data directory across containers/hosts with different PID spaces.
 - SIGINT/SIGTERM finish the current bounded operation, then close HTTP and SQLite.
@@ -198,9 +201,10 @@ To roll back, stop Deno, restore the previous code and service command, and reus
   backup tooling or stop the service before copying its data directory, including WAL files.
 
 `/api/status` reports the signer, configured endpoints, queue counts and last successful
-scan; it contains no secret key or manifest content. `/healthz` returns 200 only after a
-recent complete scan, otherwise 503. Logs are JSON with job IDs and bounded failure
-messages. A healthy scan does not imply every queued capture has succeeded; inspect the
+scan; it contains no secret key or manifest content. `relayErrors` exposes failed relay
+scans and clears each error when that relay recovers. `/healthz` returns 200 after a
+recent complete scan from at least one configured relay, otherwise 503. Logs are JSON
+with job IDs and bounded failure messages. A healthy scan does not imply every queued capture has succeeded; inspect the
 failed count and retry logs. Put a reverse proxy in front if exposing the page publicly.
 
 </details>
@@ -234,6 +238,10 @@ Deno unit/integration tests with real Chromium. No compilation step or `dist/` d
 Tests use temporary keys and local relay and Blossom fixtures, including restart and failure cases;
 they do not publish publicly.
 Browser tests use `/usr/bin/chromium`, or `CHROMIUM_PATH` when set.
+
+Treat relay failure, incomplete results, duplicate delivery, and missing acknowledgements
+as normal Nostr conditions. Isolate failures per relay, validate received events, preserve
+retry state, and require a positive acknowledgement before recording publication success.
 
 When contributing, keep changes focused and run `deno task check` before opening a pull request.
 For protocol changes, update the [wire contract](docs/protocol.md) and

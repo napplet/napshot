@@ -214,6 +214,7 @@ Deno.test("actual server serves the SPA, public assets, and exact skill with sec
       blossomServers: [],
       counts: { pending: 0, done: 0, failed: 0 },
       lastScan: null,
+      relayErrors: {},
     });
     for (const [path, method, expectedStatus] of [
       ["/healthz", "GET", 503], ["/.env", "GET", 404], ["/api/status", "POST", 405],

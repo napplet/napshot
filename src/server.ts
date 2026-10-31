@@ -29,7 +29,8 @@ function status(worker?: Worker) {
   const config = worker?.config;
   return { name: 'Napshot', pubkey: config?.pubkey ?? null,
     relays: config?.relays ?? [], blossomServers: config?.blossomServers ?? [],
-    counts: worker?.store.counts() ?? { pending: 0, done: 0, failed: 0 }, lastScan: worker?.lastScan ?? null };
+    counts: worker?.store.counts() ?? { pending: 0, done: 0, failed: 0 }, lastScan: worker?.lastScan ?? null,
+    relayErrors: worker?.relayErrors ?? {} };
 }
 
 function sendStatic(path: string, response: ServerResponse): void {
