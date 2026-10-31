@@ -28,7 +28,7 @@ services:
     security_opt:
       - no-new-privileges:true
       # Playwright's Docker profile permits Chromium's user namespace sandbox.
-      - seccomp=${NAPSHOT_SECCOMP_PROFILE:-./deploy/chromium-seccomp.json}
+      - seccomp=./deploy/chromium-seccomp.json
     healthcheck:
       # Container liveness; /healthz separately reports worker scan readiness.
       test: ["CMD", "deno", "eval", "const r = await fetch('http://127.0.0.1:3080/'); Deno.exit(r.ok ? 0 : 1)"]
@@ -39,4 +39,4 @@ services:
 
 volumes:
   napshot-data:
-    name: homelab-napshot-data
+    # Coolify namespaces this volume by application UUID across redeploys.

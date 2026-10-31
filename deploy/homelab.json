@@ -17,14 +17,5 @@
       "name": "napshot",
       "domain": "http://napshot.192.168.151.147.sslip.io"
     }
-  ],
-  "environment_variables": [
-    {
-      "key": "NAPSHOT_SECCOMP_PROFILE",
-      "value": "/srv/homelab/napshot/chromium-seccomp.json",
-      "is_literal": true,
-      "is_preview": false,
-      "is_buildtime": false
-    }
   ]
 }

@@ -2,7 +2,7 @@
 
 Napshot uses the repository's `Dockerfile` and `compose.yaml`. The container runs
 as UID 1000, includes Deno 2.9.6 and Debian Chromium, and retains SQLite in the
-named volume `homelab-napshot-data` at `/app/data`. Run one replica on beta.
+application-specific `napshot-data` volume at `/app/data`. Run one replica on beta.
 
 ## Deploy or recreate
 
@@ -13,8 +13,7 @@ From the homelab repository at `origin/master`:
 ./homelab napshot verify
 ```
 
-The command installs the repository sandbox profile on beta, then creates or
-updates `napshot` in **Homelab Apps → production** on
+The command applies the source-tracked deployment manifest to create or update `napshot` in **Homelab Apps → production** on
 **beta-ssh**. Coolify builds GitHub `napplet/napshot`, branch `main`, using
 `/compose.yaml`. Its route is <http://napshot.192.168.151.147.sslip.io> on the LAN.
 The source must be committed and pushed to `main` before deploying. Subsequent
@@ -62,8 +61,8 @@ for capture, upload, or publication failures.
 
 The seccomp profile comes from Playwright's Docker configuration and
 permits Chromium user namespaces while keeping the browser sandbox enabled.
-The deploy command restores it to `/srv/homelab/napshot/chromium-seccomp.json`
-on beta and sets `NAPSHOT_SECCOMP_PROFILE` in Coolify. Keep that value unchanged. Do not add
+Compose resolves the profile relative to the source checkout inside Coolify’s
+build helper; no host-side installation or environment override is needed. Do not add
 `--no-sandbox`, privileged mode, or a second worker sharing the data volume.
 The container has a 2 GiB memory limit, two CPUs, and 512 MiB shared memory.
 See [Playwright's Docker guidance](https://playwright.dev/docs/docker).
