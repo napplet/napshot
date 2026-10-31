@@ -7,6 +7,7 @@ export interface Config {
   key: Uint8Array; pubkey: string; relays: string[]; blossomServers: string[]; trustedAuthors: string[];
   dataDir: string; host: string; port: number; pollMs: number; lookbackSeconds: number; minReplicas: number;
   capture: { executablePath?: string; width: number; height: number; delayMs: number; timeoutMs: number };
+  profile?: Record<string, unknown>;
 }
 function integer(env: Record<string, string | undefined>, name: string, fallback: number, min: number, max: number): number {
   const value = Number(env[name] ?? fallback);
@@ -37,8 +38,26 @@ export function loadConfig(env: Record<string, string | undefined> = Deno.env.to
     port: integer(env, 'NAPSHOT_PORT', 3080, 1, 65535), pollMs: integer(env, 'NAPSHOT_POLL_MS', 30000, 1000, 3600000),
     lookbackSeconds: integer(env, 'NAPSHOT_LOOKBACK_SECONDS', 86400, 0, 31536000),
     minReplicas: integer(env, 'NAPSHOT_MIN_REPLICAS', 2, 2, blossomServers.length),
-    capture: captureConfig(env),
+    capture: captureConfig(env), profile: profileConfig(env.NAPSHOT_PROFILE),
   };
+}
+
+function profileConfig(raw: string | undefined): Config['profile'] {
+  if (!raw?.trim()) return undefined;
+  const invalid = () => new Error('Invalid NAPSHOT_PROFILE: expected a JSON metadata object, at most 16 KiB');
+  if (Buffer.byteLength(raw, 'utf8') > 16384) throw invalid();
+  let profile: unknown;
+  try { profile = JSON.parse(raw); } catch { throw invalid(); }
+  if (!isProfileObject(profile)) throw invalid();
+  const fields = profile as Record<string, unknown>;
+  const strings = ['name', 'display_name', 'about', 'picture', 'banner', 'website', 'nip05', 'lud16', 'lud06'];
+  if (strings.some(field => field in fields && typeof fields[field] !== 'string')) throw invalid();
+  if ('bot' in fields && typeof fields.bot !== 'boolean') throw invalid();
+  return { name: 'napshot', display_name: 'Napshot', bot: true, ...fields };
+}
+
+function isProfileObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function secretKey(env: Record<string, string | undefined>): Uint8Array {

@@ -30,7 +30,7 @@ export async function relayFixture() {
   const published: Event[] = [];
   const queries: Filter[] = [];
   const sockets = new Set<Duplex>();
-  const behavior = { query: 'normal', publish: 'accept', duplicates: false };
+  const behavior = { query: 'normal', publish: 'accept', duplicates: false, rejectKinds: [] as number[] };
   const server = createServer((_request, response) => response.writeHead(426).end());
   const handle = (socket: Duplex, frame: unknown[]) => {
     if (frame[0] === 'REQ') {
@@ -49,8 +49,9 @@ export async function relayFixture() {
     if (frame[0] === 'EVENT') {
       const event = frame[1] as Event;
       published.push(event);
-      if (behavior.publish !== 'reject' && verifyEvent(event)) events.push(event);
-      if (behavior.publish !== 'silent') socket.write(encode(['OK', event.id, behavior.publish === 'accept', 'fixture']));
+      const accepts = behavior.publish !== 'reject' && !behavior.rejectKinds.includes(event.kind);
+      if (accepts && verifyEvent(event)) events.push(event);
+      if (behavior.publish !== 'silent') socket.write(encode(['OK', event.id, accepts, 'fixture']));
     }
   };
   server.on('upgrade', (request, socket) => {

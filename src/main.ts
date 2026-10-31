@@ -3,6 +3,7 @@ import { loadConfig } from './config.ts';
 import { Store } from './store.ts';
 import { Worker } from './worker.ts';
 import { createSite } from './server.ts';
+import { Announcer } from './announce.ts';
 
 async function main(): Promise<void> {
   if (Deno.args.includes('--site-only')) {
@@ -18,7 +19,7 @@ function shutdownController() {
   const stop = () => abort.abort();
   const signals = ['SIGINT', 'SIGTERM'] as const;
   for (const signal of signals) Deno.addSignalListener(signal, stop);
-  return { signal: abort.signal, dispose: () => {
+  return { signal: abort.signal, stop, dispose: () => {
     for (const signal of signals) Deno.removeSignalListener(signal, stop);
   } };
 }
@@ -38,11 +39,16 @@ async function runService(): Promise<void> {
   const worker = new Worker(config, store);
   const server = createSite(worker);
   const shutdown = shutdownController();
+  const tasks: Promise<void>[] = [];
   try {
+    const announcer = new Announcer(config, store);
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
     console.log(JSON.stringify({ level: 'info', message: 'napshot_started', pubkey: config.pubkey, port: config.port }));
-    await runWorker(worker, config.pollMs, shutdown.signal);
+    tasks.push(runWorker(worker, config.pollMs, shutdown.signal), announcer.run(shutdown.signal));
+    await Promise.all(tasks);
   } finally {
+    shutdown.stop();
+    await Promise.allSettled(tasks);
     server.closeAllConnections(); server.close(); store.close(); shutdown.dispose();
   }
 }

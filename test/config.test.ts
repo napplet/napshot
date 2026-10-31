@@ -23,3 +23,13 @@ Deno.test('operator configuration keeps quorum, key and URL invariants', () => {
     { NAPSHOT_PORT: 'NaN' }, { NAPSHOT_WIDTH: '999999' }, { NAPSHOT_TRUSTED_AUTHORS: 'bad' },
   ]) assert.throws(() => loadConfig({ ...env, ...patch }));
 });
+
+Deno.test('one optional profile setting enables metadata without a pubkey or NIP-05 resolution', () => {
+  assert.equal(loadConfig(env).profile, undefined);
+  const profile = loadConfig({ ...env, NAPSHOT_PROFILE: '{"nip05":"napshot@unresolved.invalid"}' }).profile;
+  assert.deepEqual(profile, { name: 'napshot', display_name: 'Napshot', bot: true, nip05: 'napshot@unresolved.invalid' });
+  assert.equal('website' in profile!, false);
+  for (const raw of ['oops', 'null', '[]', 'true', '{"name":12}', '{"bot":"true"}', ' '.repeat(16384) + '{}']) {
+    assert.throws(() => loadConfig({ ...env, NAPSHOT_PROFILE: raw }), /Invalid NAPSHOT_PROFILE/);
+  }
+});
