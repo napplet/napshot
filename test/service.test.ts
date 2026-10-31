@@ -57,13 +57,14 @@ Deno.test('service process stays alive through relay outage and shuts down clean
         args: ['run', '--no-prompt', '-A', '--frozen', 'src/main.ts'],
         env: { ...trap, NAPSHOT_SECRET_KEY: key, NAPSHOT_DATA_DIR: directory,
           NAPSHOT_HOST: '127.0.0.1', NAPSHOT_PORT: String(port), NAPSHOT_POLL_MS: '1000',
+          NAPSHOT_PROFILE: '{"name":"Outage test","nip05":"napshot@unresolved.invalid"}',
           NAPSHOT_RELAYS: `wss://127.0.0.1:${relayPort}`, NAPSHOT_BLOSSOM_SERVERS: 'https://a.example,https://b.example' },
         stdin: 'null', stdout: 'piped', stderr: 'piped',
       }).spawn();
       let output = '';
       const readers = [readOutput(child.stdout, text => { output += text; }), readOutput(child.stderr, text => { output += text; })];
       try {
-        await waitUntil(() => output.includes('relay_scan_failed'), 8000);
+        await waitUntil(() => output.includes('relay_scan_failed') && output.includes('instance_event_retry_scheduled'), 8000);
         assert.match(output, /napshot_started/);
         const response = await fetch(`http://127.0.0.1:${port}/api/status`);
         const status = await response.json();

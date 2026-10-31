@@ -17,5 +17,22 @@
       "name": "napshot",
       "domain": "http://napshot.192.168.151.147.sslip.io"
     }
+  ],
+  "environment_variables": [
+    {
+      "key": "NAPSHOT_PROFILE",
+      "value": {
+        "name": "napshot",
+        "display_name": "Napshot",
+        "about": "I capture missing napplet previews in a signed-out shell, mirror them on Blossom, and publish verifiable screenshot labels. Automated Nostr service.",
+        "bot": true,
+        "nip05": "napshot@napplet.run"
+      },
+      "is_literal": true,
+      "is_preview": false,
+      "is_buildtime": false,
+      "is_runtime": true,
+      "is_shown_once": false
+    }
   ]
 }

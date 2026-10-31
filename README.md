@@ -111,6 +111,7 @@ publication waits until the configured minimum is met.
 | --- | --- |
 | `NAPSHOT_SECRET_KEY` | Required lowercase hex private key; keep stable across restarts |
 | `NAPSHOT_RELAYS` | Required comma-separated `wss://` relay URLs for watching and publishing |
+| `NAPSHOT_PROFILE` | Optional JSON profile; enables kind-0 and NIP-65 self-publication with the existing signer and relays |
 | `NAPSHOT_BLOSSOM_SERVERS` | Required distinct HTTPS origins; at least two; also artifact fallbacks |
 | `NAPSHOT_MIN_REPLICAS` | Minimum verified uploads before publication, default `2`, never below `2` |
 | `NAPSHOT_TRUSTED_AUTHORS` | Additional comma-separated hex labeler public keys; own signer is always trusted |
@@ -128,6 +129,11 @@ upload authorization; it does not purchase storage, negotiate payments, or perfo
 NIP-42 relay authentication. URLs are not credentials. HTTPS Blossom redirects are
 rejected intentionally. At least two distinct origins are required, although different
 origins do not prove independent infrastructure ownership.
+
+For an instance profile, set `NAPSHOT_PROFILE` to a JSON object containing its bio,
+name, NIP-05 address, and any other public metadata. The service derives its signer
+and relay list automatically. See the [instance identity guide](docs/instance-profile.md)
+for the single-setting pattern, durable publication, retries, and homelab profile.
 
 ## Operations
 

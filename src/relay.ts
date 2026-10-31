@@ -51,11 +51,14 @@ export class Relays {
     }, this.timeoutMs);
   }
   async publish(event: Event): Promise<void> {
-    const results = await Promise.allSettled(this.urls.map(url => exchange(url, ['EVENT', event], frame => {
+    const results = await Promise.allSettled(this.urls.map(url => this.publishTo(url, event)));
+    if (!results.some(result => result.status === 'fulfilled')) throw new Error('No relay acknowledged event');
+  }
+  async publishTo(url: string, event: Event): Promise<void> {
+    await exchange(url, ['EVENT', event], frame => {
       if (frame[0] !== 'OK' || frame[1] !== event.id) return;
       if (frame[2] !== true) throw new Error('Relay rejected publication');
       return true;
-    }, this.timeoutMs)));
-    if (!results.some(result => result.status === 'fulfilled')) throw new Error('No relay acknowledged screenshot label');
+    }, this.timeoutMs);
   }
 }

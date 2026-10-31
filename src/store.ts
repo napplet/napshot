@@ -11,6 +11,11 @@ export interface Job {
   png: Uint8Array | null; servers: string; label: string | null;
 }
 
+export interface Announcement {
+  event: Event;
+  deliveries: Record<string, { acknowledged: boolean; attempts: number; nextAt: number }>;
+}
+
 /** Single-owner SQLite queue. Capture and signed publication survive process restarts. */
 export class Store {
   private readonly db: DatabaseSync;
@@ -29,6 +34,8 @@ export class Store {
           status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0,
           png BLOB, servers TEXT NOT NULL DEFAULT '[]', label TEXT, error TEXT);
         CREATE TABLE IF NOT EXISTS cursors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS announcements (pubkey TEXT NOT NULL, kind INTEGER NOT NULL,
+          state TEXT NOT NULL, PRIMARY KEY (pubkey,kind));
         CREATE INDEX IF NOT EXISTS due ON jobs(status,next_at);
       `);
     } catch (error) { unlinkSync(this.lock); throw error; }
@@ -87,6 +94,15 @@ export class Store {
       if (row.status === 'pending' || row.status === 'done' || row.status === 'failed') counts[row.status] = Number(row.count);
     }
     return counts;
+  }
+  announcement(pubkey: string, kind: number): Announcement | undefined {
+    const row = this.db.prepare('SELECT state FROM announcements WHERE pubkey=? AND kind=?')
+      .get(pubkey, kind) as { state: string } | undefined;
+    return row ? JSON.parse(row.state) as Announcement : undefined;
+  }
+  saveAnnouncement(state: Announcement): void {
+    this.db.prepare('INSERT OR REPLACE INTO announcements VALUES (?,?,?)')
+      .run(state.event.pubkey, state.event.kind, JSON.stringify(state));
   }
   close(): void { this.db.close(); unlinkSync(this.lock); }
 }

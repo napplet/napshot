@@ -50,6 +50,12 @@ Leave these container paths and port unchanged. Optional runtime values are
 `NAPSHOT_LOOKBACK_SECONDS=86400`, and `NAPSHOT_TRUSTED_AUTHORS=` (additional
 comma-separated hex public keys). Two verified mirrors are always required.
 
+The homelab manifest also manages the public `NAPSHOT_PROFILE` JSON value. It
+enables kind-0 and NIP-65 publication using the existing signer and relay list.
+The instance is named Napshot with `nip05: napshot@napplet.run`, `bot: true`, and
+no website field. NIP-05 resolution is not a prerequisite for publication.
+See [instance identity](instance-profile.md) before changing this metadata.
+
 ## Verify and maintain
 
 After activation, `/api/status` must report your signer public
