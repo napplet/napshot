@@ -54,7 +54,8 @@ comma-separated hex public keys). Two verified mirrors are always required.
 
 After activation, `/api/status` must report your signer public
 key, configured endpoints, and a recent successful scan. `/healthz` becomes 200
-after a complete scan; preview mode intentionally returns 503. The Compose
+after a complete scan from any configured relay; `relayErrors` reports degraded
+relays. Preview mode intentionally returns 503. The Compose
 healthcheck checks `/` for HTTP liveness, so a healthy container alone does not
 prove relay scans or captures are succeeding. Check Coolify logs and job counts
 for capture, upload, or publication failures.

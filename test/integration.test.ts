@@ -12,6 +12,7 @@ import { buildLabel, parseManifest } from '../src/protocol.ts';
 import { Relays } from '../src/relay.ts';
 import { Store } from '../src/store.ts';
 import { Worker } from '../src/worker.ts';
+import { createSite } from '../src/server.ts';
 import { blossomFixture, relayFixture } from './fixtures.ts';
 
 const html = Buffer.from('<!doctype html><body style="margin:0;background:#205e47;color:white">Napshot wire test</body>');
@@ -233,4 +234,75 @@ Deno.test('first-scan outage preserves its initial backfill boundary across conf
     assert.ok(store.cursor(env.relay.url)! > baseline!);
     assert.ok(worker.lastScan);
   } finally { store?.close(); await env.close(); }
+});
+
+for (const failure of ['closed', 'silent']) {
+  Deno.test(`one ${failure} relay cannot veto healthy scans, capture or acknowledged publication`, async () => {
+    const env = await environment(100); const bad = await relayFixture(); const store = new Store(env.directory);
+    env.config.relays.unshift(bad.url); bad.behavior.query = failure; bad.behavior.publish = 'reject';
+    const checkpoint = Math.floor(Date.now() / 1000) - 30;
+    store.checkpoint(bad.url, checkpoint); env.relay.events.push(manifest());
+    let captures = 0;
+    const worker = env.worker(store, () => { captures++; return Promise.resolve(smallPng); });
+    try {
+      await worker.scan();
+      assert.equal(store.cursor(bad.url), checkpoint, 'failed relay must retain its own cursor');
+      assert.ok(worker.lastScan, 'a complete healthy relay scan must establish readiness');
+      assert.ok(worker.relayErrors[bad.url], 'the failed relay remains visible as degraded');
+      assert.equal(store.counts().pending, 1);
+      await worker.processOne();
+      assert.equal(captures, 1);
+      assert.equal(env.first.uploads.length, 1); assert.equal(env.second.uploads.length, 1);
+      assert.equal(env.relay.published.length, 1, 'healthy relay must acknowledge the persisted label');
+      assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
+      assert.ok(JSON.stringify(env.logs).includes('relay_label_query_failed'));
+      bad.behavior.query = 'normal'; await worker.scan();
+      assert.ok(store.cursor(bad.url)! > checkpoint, 'recovered relay resumes its own scan');
+      assert.equal(worker.relayErrors[bad.url], undefined, 'recovery clears that relay failure');
+      assert.equal(await worker.processOne(), false, 'recovery cannot recapture the completed manifest');
+    } finally { store.close(); await bad.close(); await env.close(); }
+  });
+}
+
+Deno.test('a trusted exact-revision label on a reachable relay still suppresses capture during another relay outage', async () => {
+  const env = await environment(); const bad = await relayFixture(); const store = new Store(env.directory);
+  env.config.relays.unshift(bad.url); bad.behavior.query = 'closed';
+  const target = manifest(); const shot = { hash: 'a'.repeat(64), size: 200, width: 320, height: 200,
+    servers: env.config.blossomServers };
+  env.relay.events.push(target, buildLabel(parseManifest(target)!, shot, env.config.key, env.relay.url));
+  let captures = 0;
+  const worker = env.worker(store, () => { captures++; return Promise.resolve(smallPng); });
+  try {
+    await worker.scan(); await worker.processOne();
+    assert.equal(captures, 0); assert.equal(env.first.uploads.length, 0);
+    assert.equal(env.relay.published.length, 0);
+    assert.deepEqual(store.counts(), { pending: 0, done: 0, failed: 0 }, 'trusted existing label must skip the job');
+  } finally { store.close(); await bad.close(); await env.close(); }
+});
+
+Deno.test('total relay outage defers capture and readiness until one relay recovers', async () => {
+  const env = await environment(); const bad = await relayFixture(); const store = new DueStore(env.directory);
+  env.config.relays.push(bad.url); env.relay.behavior.query = 'closed'; bad.behavior.query = 'closed';
+  const target = manifest(); store.enqueue(parseManifest(target)!, false); env.relay.events.push(target);
+  let captures = 0;
+  const worker = env.worker(store, () => { captures++; return Promise.resolve(smallPng); });
+  const site = createSite(worker);
+  await new Promise<void>(resolve => site.listen(0, '127.0.0.1', resolve));
+  const address = site.address(); assert.ok(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}/healthz`;
+  try {
+    await worker.scan(); await worker.processOne();
+    assert.equal(captures, 0); assert.equal(store.counts().failed, 1);
+    let response = await fetch(url); assert.equal(response.status, 503);
+    let status = await response.json(); assert.equal(Object.keys(status.relayErrors).length, 2);
+    env.relay.behavior.query = 'normal'; await worker.scan();
+    response = await fetch(url); assert.equal(response.status, 200);
+    status = await response.json(); assert.deepEqual(Object.keys(status.relayErrors), [bad.url]);
+    await worker.processOne();
+    assert.equal(captures, 1); assert.equal(env.relay.published.length, 1);
+    assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
+  } finally {
+    site.closeAllConnections(); await new Promise<void>(resolve => site.close(() => resolve()));
+    store.close(); await bad.close(); await env.close();
+  }
 });
