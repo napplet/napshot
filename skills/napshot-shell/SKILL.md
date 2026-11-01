@@ -24,6 +24,8 @@ const filter = {
 
 Require a nonempty, explicitly configured trusted signer list before querying. Never omit `authors` or interpret an empty list as permission to trust everyone. The instance’s `/api/status` exposes its public key for comparison with the operator’s independently verified key; the endpoint itself is not a trust anchor.
 
+For the public napplet instance, the independently published key is `94b92a261c88f6b14098e6ec15c93bed544380883745f9a030b27d4a5c554f81` (`npub1jjuj5fsu3rmtzsycumkptjfma42y8qygxazlngpskf755hz4f7qspp2xx4`, NIP-05 `napshot@napplet.run`). Its labels are published to `wss://relay.napplet.soy/` and `wss://relay.primal.net/`. The [README](https://github.com/napplet/napshot#public-instance-signer) and `https://napplet.run/.well-known/nostr.json?name=napshot` both publish this key. Pin it in source as a default the operator can override. Verify it against both sources rather than fetching it from the instance at runtime.
+
 A label’s tags have this shape (metavariables are explanatory):
 
 ```js

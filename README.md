@@ -90,6 +90,23 @@ attach an image using only the stable `a` address. See the [wire contract](docs/
 for complete tags and a query example. Shells read directly from Nostr and Blossom;
 Napshot’s HTTP process does not need to stay online for already published previews.
 
+### Public instance signer
+
+The public napplet Napshot instance signs labels with this key. Pin it in your shell's
+source rather than learning it from the instance at runtime:
+
+| Field | Value |
+|---|---|
+| Hex | `94b92a261c88f6b14098e6ec15c93bed544380883745f9a030b27d4a5c554f81` |
+| npub | `npub1jjuj5fsu3rmtzsycumkptjfma42y8qygxazlngpskf755hz4f7qspp2xx4` |
+| NIP-05 | `napshot@napplet.run` |
+| Label relays | `wss://relay.napplet.soy/`, `wss://relay.primal.net/` |
+
+Two independent sources agree on the key: this repository and
+<https://napplet.run/.well-known/nostr.json?name=napshot>. The instance's `/api/status`
+and its self-signed profile and relay list should match them, but neither one is a trust anchor.
+If the key ever rotates, it changes here and in that NIP-05 document together.
+
 ## How it works
 
 ```mermaid
