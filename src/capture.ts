@@ -210,7 +210,7 @@ function createPreviewProxy(origin: string, relays: string[]): Server {
   server.on('connect', (request, socket, head) => {
     const target = relayTarget(request.url ?? '', relays);
     if (!target) { socket.destroy(); return; }
-    void tunnel(socket, head, target);
+    void tunnel(socket, head, target, tunnelsOf(server));
   });
   server.on('upgrade', (_request, socket) => socket.destroy());
   return server;
@@ -240,11 +240,22 @@ async function relayAddress(target: RelayTarget): Promise<string> {
   return addresses[0].address;
 }
 
-async function tunnel(client: Duplex, head: Buffer, target: RelayTarget): Promise<void> {
+/** Sockets handed to CONNECT tunnels leave the HTTP server's bookkeeping; track them so close() can end them. */
+const TUNNELS = new WeakMap<Server, Set<Duplex>>();
+function tunnelsOf(server: Server): Set<Duplex> {
+  let sockets = TUNNELS.get(server);
+  if (!sockets) TUNNELS.set(server, sockets = new Set());
+  return sockets;
+}
+
+async function tunnel(client: Duplex, head: Buffer, target: RelayTarget, open: Set<Duplex>): Promise<void> {
   let upstream: Socket | undefined;
+  const track = (socket: Duplex) => { open.add(socket); socket.once('close', () => open.delete(socket)); };
+  track(client);
   try {
     const address = await relayAddress(target);
     upstream = connect({ host: address, port: target.port });
+    track(upstream);
     await new Promise<void>((resolve, reject) => { upstream!.once('connect', resolve); upstream!.once('error', reject); });
     client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
     if (head.length) upstream.write(head);
@@ -262,6 +273,7 @@ function listen(server: Server): Promise<void> {
 }
 
 function close(server: Server): Promise<void> {
+  for (const socket of TUNNELS.get(server) ?? []) socket.destroy();
   server.closeAllConnections();
   if (!server.listening) return Promise.resolve();
   return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

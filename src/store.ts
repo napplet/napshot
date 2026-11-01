@@ -1,7 +1,6 @@
-import process from 'node:process';
 import type { Buffer } from 'node:buffer';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync, chmodSync } from 'node:fs';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Event } from 'nostr-tools';
 import type { Manifest } from './protocol.ts';
@@ -18,19 +17,21 @@ export interface Announcement {
 
 export interface Capture { manifest: Manifest; label: Event }
 
-/** Single-owner SQLite queue. Capture and signed publication survive process restarts. */
+/**
+ * Single-owner SQLite queue. Capture and signed publication survive process restarts.
+ * Ownership is SQLite's exclusive file lock, which the kernel releases when the owner dies, so a
+ * container killed mid-job never leaves a stale lock behind for its replacement.
+ */
 export class Store {
   private readonly db: DatabaseSync;
-  private readonly lock: string;
   private readonly listeners = new Set<() => void>();
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    this.lock = join(directory, 'worker.pid');
-    this.claimLock();
+    const filename = join(directory, 'napshot.sqlite');
+    this.db = new DatabaseSync(filename);
     try {
-      const filename = join(directory, 'napshot.sqlite');
-      this.db = new DatabaseSync(filename);
       chmodSync(filename, 0o600);
+      this.claimLock();
       this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
         CREATE TABLE IF NOT EXISTS jobs (
           id TEXT PRIMARY KEY, address TEXT NOT NULL, created_at INTEGER NOT NULL, manifest TEXT NOT NULL,
@@ -47,21 +48,17 @@ export class Store {
       this.db.exec("UPDATE jobs SET status='pending' WHERE status='running'");
       // A restart usually means a fix or a new build: give failed jobs one prompt retry before backoff resumes.
       this.db.exec("UPDATE jobs SET next_at=0 WHERE status='failed'");
-    } catch (error) { unlinkSync(this.lock); throw error; }
+    } catch (error) { this.db.close(); throw error; }
   }
+  /** Take the database's exclusive lock for the life of this connection; fail fast if another owner holds it. */
   private claimLock(): void {
-    try { writeFileSync(this.lock, String(process.pid), { flag: 'wx', mode: 0o600 }); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const pid = Number(readFileSync(this.lock, 'utf8'));
-      if (!Number.isInteger(pid) || pid <= 0) throw new Error('Invalid worker lock; inspect data directory');
-      try { process.kill(pid, 0); }
-      catch (failure) {
-        if ((failure as NodeJS.ErrnoException).code !== 'ESRCH') throw failure;
-        unlinkSync(this.lock);
-        writeFileSync(this.lock, String(process.pid), { flag: 'wx', mode: 0o600 }); return;
+    try {
+      this.db.exec('PRAGMA locking_mode=EXCLUSIVE; PRAGMA busy_timeout=0; BEGIN IMMEDIATE; COMMIT;');
+    } catch (error) {
+      if (/SQLITE_BUSY|database is locked/i.test(error instanceof Error ? error.message : '')) {
+        throw new Error('Another worker owns this data directory');
       }
-      throw new Error('Another worker owns this data directory');
+      throw error;
     }
   }
   /** Returns true when a new capturable job entered the queue. */
@@ -179,5 +176,5 @@ export class Store {
     this.db.prepare('INSERT OR REPLACE INTO announcements VALUES (?,?,?)')
       .run(state.event.pubkey, state.event.kind, JSON.stringify(state));
   }
-  close(): void { this.db.close(); unlinkSync(this.lock); }
+  close(): void { this.db.close(); }
 }
