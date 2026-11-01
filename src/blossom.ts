@@ -29,7 +29,9 @@ export async function fetchArtifact(manifest: Manifest, fallback: string[], netw
   const servers = [...new Set([...manifest.servers.slice(0, 16), ...fallback])];
   for (const input of servers) {
     try {
-      const bytes = await network.request(`${serverOrigin(input)}/${manifest.hash}`, { maxBytes: 10_000_000 });
+      // Content is hash-verified below, so CDN redirects and slow large artifacts are acceptable.
+      const bytes = await network.request(`${serverOrigin(input)}/${manifest.hash}`,
+        { maxBytes: 25_000_000, timeoutMs: 60000, redirects: 3 });
       if (sha256(bytes) !== manifest.hash) continue;
       return bytes;
     } catch { /* Try the next independently validated server. */ }
@@ -40,6 +42,22 @@ export async function fetchArtifact(manifest: Manifest, fallback: string[], netw
 /** Upload and read back identical PNG bytes before advertising a Blossom replica. */
 export async function uploadScreenshot(data: Buffer, server: string, key: Uint8Array, network: Network): Promise<void> {
   const hash = sha256(data);
+  try { await upload(data, hash, server, key, network); }
+  catch (error) {
+    // A server may refuse a duplicate (e.g. 409) of bytes it already serves; the readback proves the replica.
+    if (!await serves(data, hash, server, network)) throw error;
+    return;
+  }
+  // Read the canonical content-addressed path, never an arbitrary upload response URL.
+  if (!await serves(data, hash, server, network)) throw new Error('Blossom readback hash mismatch');
+}
+
+async function serves(data: Buffer, hash: string, server: string, network: Network): Promise<boolean> {
+  try { return sha256(await network.request(`${server}/${hash}`, { maxBytes: data.length })) === hash; }
+  catch { return false; }
+}
+
+async function upload(data: Buffer, hash: string, server: string, key: Uint8Array, network: Network): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const auth = finalizeEvent({ kind: 24242, created_at: now - 1, content: 'Upload a Napshot screenshot',
     tags: [['t', 'upload'], ['x', hash], ['server', new URL(server).hostname], ['expiration', String(now + 300)]],
@@ -52,7 +70,4 @@ export async function uploadScreenshot(data: Buffer, server: string, key: Uint8A
   if (descriptor.sha256 !== hash || descriptor.size !== data.length || descriptor.type !== 'image/png') {
     throw new Error('Blossom descriptor does not match screenshot');
   }
-  // Read the canonical content-addressed path, never an arbitrary upload response URL.
-  const readback = await network.request(`${server}/${hash}`, { maxBytes: data.length });
-  if (sha256(readback) !== hash) throw new Error('Blossom readback hash mismatch');
 }

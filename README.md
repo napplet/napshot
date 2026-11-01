@@ -129,8 +129,11 @@ publication waits until the configured minimum is met.
 
 Use servers that accept uploads from the configured signer. Napshot handles BUD-11
 upload authorization; it does not purchase storage, negotiate payments, or perform
-NIP-42 relay authentication. URLs are not credentials. HTTPS Blossom redirects are
-rejected intentionally. At least two distinct origins are required, although different
+NIP-42 relay authentication. URLs are not credentials. Replica uploads and readbacks
+reject redirects intentionally; artifact downloads follow up to three public HTTPS
+redirects (for CDN-backed servers) because their bytes are hash-verified. A server that
+refuses a duplicate upload still counts when its readback serves the exact PNG.
+At least two distinct origins are required, although different
 origins do not prove independent infrastructure ownership.
 
 For an instance profile, set `NAPSHOT_PROFILE` to a JSON object containing its bio,
