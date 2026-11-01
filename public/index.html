@@ -2,273 +2,166 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta
       name="description"
-      content="Napshot gives napplets a preview: automated screenshots, mirrored on Blossom and discoverable on Nostr."
+      content="Live feed of napplet screenshots captured by this Napshot instance, with their NIP-32 labels and napplet events."
     />
-    <meta name="theme-color" content="#eee9de" />
-    <title>Napshot · A preview for every napplet</title>
+    <meta name="theme-color" content="#eee9de" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1c18" media="(prefers-color-scheme: dark)" />
+    <title>Napshot</title>
     <link rel="stylesheet" href="/style.css" />
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
-    <header class="masthead wrap">
-      <a class="wordmark" href="#" aria-label="Napshot home"
-        ><span class="viewfinder" aria-hidden="true"></span>napshot<span
-          class="period"
-          >.</span
-        ></a
-      >
-      <nav aria-label="Main navigation">
-        <a href="#how">How it works</a><a href="#shells">For shells</a
-        ><a href="#skill">Get the skill <span aria-hidden="true">↗</span></a>
-      </nav>
-    </header>
-    <main id="main">
-      <section class="hero wrap" aria-labelledby="hero-title">
-        <div class="hero-copy">
-          <p class="eyebrow">
-            <span class="orange-dot" aria-hidden="true"></span> The napplet
-            screenshot service
-          </p>
-          <h1 id="hero-title">
-            A little app.<br />A clearer<br /><em>first look.</em>
-          </h1>
-          <p class="intro">
-            Napshot watches for napplets without a screenshot, takes their
-            picture, and makes it available to every shell.
-          </p>
-          <a class="button" href="#skill"
-            >Add previews to your shell <span aria-hidden="true">↗</span></a
-          >
-          <p class="hero-note">
-            Root + named napplets. Blossom storage. Nostr discovery.
-          </p>
-        </div>
-        <figure
-          class="contact-sheet"
-          aria-label="Illustration of a napplet becoming a discoverable screenshot"
+    <div class="app" id="app">
+      <header class="topbar">
+        <a class="wordmark" href="#" aria-label="Napshot"
+          ><span class="viewfinder" aria-hidden="true"></span>napshot<span class="period">.</span></a
         >
-          <div class="sheet-meta">
-            <span>NAPSHOT / CONTACT SHEET</span><span>01–03</span>
-          </div>
-          <div class="contact-frame empty-frame">
-            <span class="frame-index">01</span>
-            <div class="empty-viewfinder" aria-hidden="true">+</div>
-            <span class="frame-caption">A napplet. No preview.</span>
-          </div>
-          <div class="contact-frame captured-frame">
-            <span class="frame-index">02</span>
-            <div class="sample-app" aria-hidden="true">
-              <div class="sample-top"><span>Today</span><span>•••</span></div>
-              <div class="sample-date">30<span>OCT</span></div>
-              <div class="sample-line"></div>
-              <div class="sample-line short"></div>
-              <div class="sample-bars">
-                <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-              </div>
-            </div>
-            <span class="frame-caption">One frame, captured.</span>
-          </div>
-          <div class="sheet-output">
-            <span class="frame-index">03</span
-            ><span>Mirrored. Signed. Discoverable.</span
-            ><span class="output-arrow" aria-hidden="true">↗</span>
-          </div>
-          <figcaption>
-            Illustrated workflow · previews belong to an exact event
-          </figcaption>
-        </figure>
-      </section>
-      <section class="process wrap" id="how" aria-labelledby="process-title">
-        <div class="section-heading">
-          <p class="eyebrow">01 / From event to image</p>
-          <h2 id="process-title">
-            Publish your napplet.<br />Napshot handles the picture.
-          </h2>
+        <div class="tabs" role="tablist" aria-label="Views">
+          <button type="button" role="tab" id="tab-captures" aria-controls="view-captures" aria-selected="true">
+            Captures
+          </button>
+          <button type="button" role="tab" id="tab-about" aria-controls="view-about" aria-selected="false" tabindex="-1">
+            About
+          </button>
         </div>
-        <ol class="steps">
-          <li>
-            <span class="step-number">01</span>
-            <h3>Watch</h3>
-            <p>
-              Find root and named manifests on configured relays. Keep the
-              author’s usable screenshot when one already exists.
-            </p>
-          </li>
-          <li>
-            <span class="step-number">02</span>
-            <h3>Capture</h3>
-            <p>
-              Render the napplet in a sandboxed Paja shell and capture its
-              iframe. A fresh, signed-out view, with no personal account
-              attached.
-            </p>
-          </li>
-          <li>
-            <span class="step-number">03</span>
-            <h3>Mirror</h3>
-            <p>
-              Upload the same PNG to at least two Blossom servers. The content
-              hash identifies the image across every copy.
-            </p>
-          </li>
-          <li>
-            <span class="step-number">04</span>
-            <h3>Label</h3>
-            <p>
-              Publish a signed NIP-32 event referencing the exact napplet event.
-              Shells can discover the picture without changing the manifest.
-            </p>
-          </li>
-        </ol>
-        <p class="scope-note">
-          Root <code>15129</code> + named <code>35129</code> only. Snapshots are
-          excluded. Captures show the initial view; features requiring an
-          account or network data may appear empty.
-        </p>
-      </section>
-      <section class="shell-section" id="shells" aria-labelledby="shell-title">
-        <div class="wrap shell-layout">
-          <div>
-            <p class="eyebrow">02 / For shell implementers</p>
-            <h2 id="shell-title">One lookup.<br />A better app shelf.</h2>
-            <p class="section-intro">
-              Use the author’s screenshot first. When it’s missing, look for a
-              label from a Napshot signer you trust.
-            </p>
-            <ol class="integration-list">
-              <li>
-                Query kind <code>1985</code> by the manifest’s exact event ID,
-                label namespace, and trusted signer.
-              </li>
-              <li>
-                Verify the signature, target, and screenshot hash. An address
-                tag alone doesn’t identify a revision.
-              </li>
-              <li>
-                Fetch the PNG from the listed Blossom servers. Verify its
-                SHA-256 before displaying it; try another mirror if needed.
-              </li>
-            </ol>
-            <p class="muted">
-              A screenshot is a preview, not an endorsement or a guarantee that
-              a napplet is safe.
-            </p>
-          </div>
-          <div class="code-panel">
-            <div class="code-heading">
-              <span>RELAY FILTER</span><span>NIP-32 / 1985</span>
+        <div class="live" id="live" data-state="connecting" role="status" aria-live="polite">
+          <span class="live-dot" aria-hidden="true"></span><span id="live-label">Connecting…</span>
+        </div>
+        <dl class="counts" aria-label="Queue">
+          <div><dt>Queued</dt><dd id="pending-count">—</dd></div>
+          <div><dt>Captured</dt><dd id="done-count">—</dd></div>
+          <div><dt>Retrying</dt><dd id="failed-count">—</dd></div>
+        </dl>
+      </header>
+
+      <main class="views">
+        <section class="captures-view" id="view-captures" role="tabpanel" aria-labelledby="tab-captures">
+          <div class="gallery-pane">
+            <div class="pane-head">
+              <h1>Recent captures</h1>
+              <span class="pane-meta" id="capture-meta"></span>
             </div>
-            <pre><code>{
+            <ol class="gallery" id="gallery" aria-label="Recently captured napplet screenshots"></ol>
+            <div class="empty" id="empty">
+              <div class="empty-frame" aria-hidden="true">+</div>
+              <p id="empty-text">Waiting for the first capture…</p>
+              <noscript><p>Enable JavaScript to see the live capture feed.</p></noscript>
+            </div>
+          </div>
+          <aside class="detail" id="detail" aria-label="Capture details">
+            <div class="detail-placeholder">
+              <p>Select a capture to inspect its screenshot, napplet and label events.</p>
+            </div>
+          </aside>
+        </section>
+
+        <section class="about-view" id="view-about" role="tabpanel" aria-labelledby="tab-about" hidden>
+          <div class="about-grid">
+            <article class="about-card about-lead">
+              <p class="eyebrow">What is this</p>
+              <h2>A preview for every napplet.</h2>
+              <p>
+                Napshot watches Nostr relays for napplet manifests (root kind <code>15129</code> and named kind
+                <code>35129</code>) that ship without a screenshot. It renders each one in a sandboxed shell, mirrors the
+                PNG to Blossom servers, and publishes a signed <a href="https://github.com/nostr-protocol/nips/blob/master/32.md">NIP-32</a>
+                label pointing at the exact napplet event. Shells can show a preview without the author changing anything.
+              </p>
+              <p class="muted">
+                A screenshot is a preview, not an endorsement or a safety guarantee. Captures show the signed-out initial
+                view; features that need an account or network data may look empty.
+              </p>
+            </article>
+            <article class="about-card">
+              <p class="eyebrow">How it works</p>
+              <ol class="steps">
+                <li><strong>Watch</strong> live relay subscriptions for manifests; author screenshots always win.</li>
+                <li><strong>Capture</strong> the napplet's first frame in a sandboxed Paja shell.</li>
+                <li><strong>Mirror</strong> the PNG to at least two Blossom servers, verified by SHA-256.</li>
+                <li><strong>Label</strong> the exact revision with a kind <code>1985</code> event.</li>
+              </ol>
+            </article>
+            <article class="about-card">
+              <p class="eyebrow">For shell implementers</p>
+              <pre class="filter"><code>{
   "kinds": [1985],
   "authors": [trustedSigner],
   "#e": [manifest.id],
   "#L": ["#screenshot"]
 }</code></pre>
-            <div class="code-footer">
-              <span class="orange-dot" aria-hidden="true"></span
-              ><span
-                >The <code>screenshot</code> tag carries the image hash, MIME
-                type, dimensions, and size. <code>server</code> tags locate its
-                mirrors.</span
-              >
-            </div>
+              <p class="muted">
+                Verify the signature, the <code>e</code> target and the image hash before display; fall back between
+                <code>server</code> mirrors.
+              </p>
+            </article>
+            <article class="about-card">
+              <p class="eyebrow">This instance's signer</p>
+              <div class="key-row">
+                <code id="signer-key">Not configured</code>
+                <button type="button" class="chip" id="copy-signer" disabled>Copy</button>
+              </div>
+              <p class="muted">Confirm this key with the operator before adding it to your shell's trusted signers.</p>
+              <p class="muted" id="last-scan">Last relay scan: —</p>
+            </article>
           </div>
+        </section>
+      </main>
+
+      <footer class="install" aria-label="Install the shell integration">
+        <span class="install-label">Add previews to your shell</span>
+        <div class="command">
+          <code id="install-command">npx skills add napplet/napshot</code>
+          <button type="button" id="copy-command" aria-label="Copy skill installation command">Copy</button>
         </div>
-      </section>
-      <section
-        class="skill-section wrap"
-        id="skill"
-        aria-labelledby="skill-title"
-      >
-        <div>
-          <p class="eyebrow">03 / Give your coding agent the contract</p>
-          <h2 id="skill-title">Install once.<br />Build it into your shell.</h2>
-          <p class="section-intro">
-            The <strong>napshot-shell</strong> skill covers discovery, trust,
-            image verification, and fallback behavior.
-          </p>
-        </div>
-        <div class="skill-instructions">
-          <div class="command-row">
-            <code id="install-command">npx skills add napplet/napshot</code
-            ><button
-              id="copy-command"
-              type="button"
-              aria-label="Copy skill installation command"
-            >
-              Copy
-            </button>
-          </div>
-          <p
-            class="copy-feedback"
-            id="copy-feedback"
-            role="status"
-            aria-live="polite"
-          ></p>
-          <p>Then ask your coding agent:</p>
-          <blockquote>
-            “Use <code>$napshot-shell</code> to add trusted Napshot previews to
-            our napplet picker.”
-          </blockquote>
-          <p class="muted publication-note">
-            Install the shell integration skill from
-            <code>napplet/napshot</code>.
-          </p>
-        </div>
-      </section>
-      <section class="service-section wrap" aria-labelledby="service-title">
-        <div class="service-heading">
-          <div>
-            <p class="eyebrow">This instance</p>
-            <h2 id="service-title">Service snapshot</h2>
-          </div>
-          <p id="service-state" class="service-state" role="status">
-            Checking status…
-          </p>
-        </div>
-        <div id="service-details" hidden>
-          <dl class="service-counts">
-            <div>
-              <dt>Pending</dt>
-              <dd id="pending-count">—</dd>
-            </div>
-            <div>
-              <dt>Completed</dt>
-              <dd id="done-count">—</dd>
-            </div>
-            <div>
-              <dt>Retrying</dt>
-              <dd id="failed-count">—</dd>
-            </div>
-            <div>
-              <dt>Last scan</dt>
-              <dd class="scan-time" id="last-scan">—</dd>
-            </div>
-          </dl>
-          <div class="signer">
-            <span>Signer public key</span><code id="signer-key"></code>
-          </div>
-          <p class="muted">
-            Verify this key with the operator before adding it to your shell’s
-            trusted signers.
-          </p>
-        </div>
-        <noscript
-          ><p>
-            Enable JavaScript to see instance status or copy the installation
-            command. All integration instructions are available above.
-          </p></noscript
+        <span class="install-hint">then ask your agent: <q>Use <code>$napshot-shell</code> to add trusted Napshot previews.</q></span>
+        <a class="repo" href="https://github.com/napplet/napshot" rel="noopener" target="_blank"
+          ><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"
+            /></svg
+          >napplet/napshot</a
         >
-      </section>
-    </main>
-    <footer class="footer wrap">
-      <a class="wordmark" href="#">napshot<span class="period">.</span></a>
-      <p>A preview for every napplet.</p>
-      <span class="footer-label">NOSTR IN. PICTURE OUT.</span>
-    </footer>
+      </footer>
+    </div>
+
+    <dialog class="sheet" id="json-dialog" aria-labelledby="json-title">
+      <header class="sheet-head">
+        <div>
+          <p class="eyebrow" id="json-kind"></p>
+          <h2 id="json-title">Event</h2>
+        </div>
+        <div class="sheet-actions">
+          <button type="button" class="chip" id="json-copy-code">Copy nevent</button>
+          <button type="button" class="chip" id="json-copy">Copy JSON</button>
+          <button type="button" class="icon-button" data-close aria-label="Close">×</button>
+        </div>
+      </header>
+      <pre class="json" id="json-body" tabindex="0"></pre>
+    </dialog>
+
+    <dialog class="sheet profile-sheet" id="profile-dialog" aria-labelledby="profile-name">
+      <header class="sheet-head">
+        <div class="profile-head">
+          <span class="avatar large" id="profile-avatar"></span>
+          <div>
+            <h2 id="profile-name">Author</h2>
+            <p class="muted" id="profile-nip05"></p>
+          </div>
+        </div>
+        <button type="button" class="icon-button" data-close aria-label="Close">×</button>
+      </header>
+      <p class="profile-about" id="profile-about"></p>
+      <div class="code-row">
+        <span class="code-label">npub</span><code id="profile-npub"></code
+        ><button type="button" class="chip" id="profile-copy">Copy</button>
+      </div>
+      <p class="profile-count muted" id="profile-count"></p>
+      <a class="button" id="profile-open" href="#" target="_blank" rel="noopener noreferrer">Open profile ↗</a>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>
 </html>

@@ -39,6 +39,18 @@ export class Network {
       catch (error) { url = followable(error, url, hop, options); }
     }
   }
+  /**
+   * Vet an untrusted relay URL (e.g. from someone's NIP-65 list) before opening a WebSocket:
+   * `wss://` only, no credentials, and every resolved address public. Returns the normalized URL.
+   * WebSocket cannot pin DNS, so this narrows rather than eliminates rebinding exposure.
+   */
+  async relayUrl(input: string): Promise<string> {
+    const url = new URL(input);
+    const schemes = this.allowPrivate ? ['wss:', 'ws:'] : ['wss:'];
+    if (!schemes.includes(url.protocol) || url.username || url.password || url.hash) throw new Error('Unsafe relay URL');
+    await resolveAddresses(url.hostname.replace(/^\[|\]$/g, ''), this.allowPrivate);
+    return url.href;
+  }
   private async once(input: string, options: RequestOptions): Promise<Buffer> {
     const url = requestUrl(input, this.allowPrivate);
     const addresses = await resolveAddresses(url.hostname.replace(/^\[|\]$/g, ''), this.allowPrivate);

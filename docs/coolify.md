@@ -39,7 +39,7 @@ that accept uploads from your dedicated signer. Generate the key locally with
 redeploys. Never put the private key in Git or build arguments.
 
 Save all four values, then click **Redeploy**. Until then, the Compose default
-`NAPSHOT_SITE_ONLY=true` serves the explainer with the worker offline and makes
+`NAPSHOT_SITE_ONLY=true` serves the viewer with the worker offline and makes
 no relay connections or signed publications. Setting it back to `true` and
 redeploying pauses the worker while preserving data.
 

@@ -5,6 +5,7 @@ import { fetchArtifact, pngDimensions, sha256, uploadScreenshot } from './blosso
 import { capture } from './capture.ts';
 import type { Config } from './config.ts';
 import { Network } from './network.ts';
+import { deliverToAuthor } from './outbox.ts';
 import { buildLabel, hasScreenshot, isPreviewIdentityLabel, isScreenshotLabel, KINDS, parseManifest, requiresIdentity,
   type Manifest } from './protocol.ts';
 import { Relays } from './relay.ts';
@@ -222,11 +223,13 @@ export class Worker {
       && (!identity || isPreviewIdentityLabel(event)));
   }
   private async process(job: Job): Promise<void> {
-    if (job.label) {
-      await this.relays.publish(JSON.parse(job.label) as Event);
-      this.store.finish(job.id); return;
-    }
     const manifest: Manifest = JSON.parse(job.manifest);
+    if (job.label) {
+      const label = JSON.parse(job.label) as Event;
+      await this.relays.publish(label);
+      this.store.finish(job.id);
+      await this.notifyAuthor(label, manifest); return;
+    }
     const existing = await this.existingLabel(manifest);
     // Keep the settling label so a later identity refresh can see the capture was already signed in.
     if (existing) { this.store.label(job.id, existing); this.store.finish(job.id, 'skipped'); return; }
@@ -239,6 +242,12 @@ export class Worker {
     this.store.label(job.id, label);
     await this.relays.publish(label);
     this.store.finish(job.id);
+    await this.notifyAuthor(label, manifest);
+  }
+  /** Best effort after the job is durably finished; failures here never retry or fail the job. */
+  private notifyAuthor(label: Event, manifest: Manifest): Promise<void> {
+    return deliverToAuthor(label, manifest.event.pubkey,
+      { relays: this.relays, network: this.network, configured: this.config.relays, log: this.log });
   }
   private async uploadReplicas(job: Job, png: Buffer): Promise<string[]> {
     const servers: string[] = JSON.parse(job.servers);

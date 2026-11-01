@@ -484,3 +484,38 @@ Deno.test('total relay outage defers capture and readiness until one relay recov
     store.close(); await bad.close(); await env.close();
   }
 });
+
+Deno.test('labels are copied to the author NIP-65 inbox relays, and inbox failures never fail the job', async () => {
+  const env = await environment(); const inbox = await relayFixture(); const outbox = await relayFixture();
+  const broken = await relayFixture(); broken.behavior.publish = 'reject';
+  const store = new Store(env.directory); const author = generateSecretKey();
+  const list = finalizeEvent({ kind: 10002, content: '', created_at: Math.floor(Date.now() / 1000), tags: [
+    ['r', inbox.url, 'read'], ['r', outbox.url, 'write'], ['r', broken.url], ['r', env.relay.url],
+  ] }, author);
+  env.relay.events.push(list, manifest({ key: author }));
+  const worker = env.worker(store);
+  try {
+    await worker.scan(); await worker.processOne();
+    assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 }, 'a rejecting inbox relay is not a hard failure');
+    assert.equal(env.relay.published.length, 1, 'configured relays receive the label once');
+    const label = env.relay.published[0];
+    assert.ok(label.tags.some(tag => tag[0] === 'p' && tag[1] === getPublicKey(author)), 'label tags the napplet author');
+    assert.deepEqual(inbox.published.map(event => event.id), [label.id], 'read relay receives the label');
+    assert.deepEqual(broken.published.map(event => event.id), [label.id], 'unmarked relays count as inboxes');
+    assert.equal(outbox.published.length, 0, 'write-only relays are not inboxes');
+    assert.ok(JSON.stringify(env.logs).includes('author_inbox_publish_failed'));
+  } finally { store.close(); await inbox.close(); await outbox.close(); await broken.close(); await env.close(); }
+});
+
+Deno.test('unreachable author inbox relays cannot fail or delay acknowledgement of the job', async () => {
+  const env = await environment(); const store = new Store(env.directory); const author = generateSecretKey();
+  const list = finalizeEvent({ kind: 10002, content: '', created_at: Math.floor(Date.now() / 1000),
+    tags: [['r', 'ws://127.0.0.1:1'], ['r', 'not a url']] }, author);
+  env.relay.events.push(list, manifest({ key: author }));
+  const worker = env.worker(store);
+  try {
+    await worker.scan(); await worker.processOne();
+    assert.equal(env.relay.published.length, 1);
+    assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
+  } finally { store.close(); await env.close(); }
+});
