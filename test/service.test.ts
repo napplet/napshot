@@ -56,7 +56,7 @@ Deno.test('service process stays alive through relay outage and shuts down clean
       const child = new Deno.Command(Deno.execPath(), {
         args: ['run', '--no-prompt', '-A', '--frozen', 'src/main.ts'],
         env: { ...trap, NAPSHOT_SECRET_KEY: key, NAPSHOT_DATA_DIR: directory,
-          NAPSHOT_HOST: '127.0.0.1', NAPSHOT_PORT: String(port), NAPSHOT_POLL_MS: '1000',
+          NAPSHOT_HOST: '127.0.0.1', NAPSHOT_PORT: String(port), NAPSHOT_RESYNC_MS: '10000',
           NAPSHOT_PROFILE: '{"name":"Outage test","nip05":"napshot@unresolved.invalid"}',
           NAPSHOT_RELAYS: `wss://127.0.0.1:${relayPort}`, NAPSHOT_BLOSSOM_SERVERS: 'https://a.example,https://b.example' },
         stdin: 'null', stdout: 'piped', stderr: 'piped',

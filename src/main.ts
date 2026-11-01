@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from 'node:timers/promises';
 import { loadConfig } from './config.ts';
 import { Store } from './store.ts';
 import { Worker } from './worker.ts';
@@ -43,22 +42,14 @@ async function runService(): Promise<void> {
   try {
     const announcer = new Announcer(config, store);
     await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(config.port, config.host, resolve); });
-    console.log(JSON.stringify({ level: 'info', message: 'napshot_started', pubkey: config.pubkey, port: config.port }));
-    tasks.push(runWorker(worker, config.pollMs, shutdown.signal), announcer.run(shutdown.signal));
+    console.log(JSON.stringify({ level: 'info', message: 'napshot_started', pubkey: config.pubkey, port: config.port,
+      concurrency: config.concurrency, backfillSince: config.backfillSince, previewIdentity: config.previewIdentity ?? null }));
+    tasks.push(worker.run(shutdown.signal), announcer.run(shutdown.signal));
     await Promise.all(tasks);
   } finally {
     shutdown.stop();
     await Promise.allSettled(tasks);
     server.closeAllConnections(); server.close(); store.close(); shutdown.dispose();
-  }
-}
-
-async function runWorker(worker: Worker, pollMs: number, signal: AbortSignal): Promise<void> {
-  let nextScan = 0;
-  while (!signal.aborted) {
-    if (Date.now() >= nextScan) { await worker.scan(); nextScan = Date.now() + pollMs; }
-    if (signal.aborted) break;
-    if (!await worker.processOne()) await sleep(500, undefined, { signal }).catch(() => {});
   }
 }
 

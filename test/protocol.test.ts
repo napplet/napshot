@@ -47,3 +47,20 @@ Deno.test('malformed media cannot suppress captures through another valid screen
   assert.equal(isScreenshotLabel(label,target.id,[getPublicKey(key)]),false);
   assert.equal(hasScreenshot([['screenshot',`x ${hash}`,'x']]),false);
 });
+
+Deno.test('single-file legacy maps are renderable; multi-file sites are not', () => {
+  const file = (tags: string[][], content = '') => finalizeEvent({ kind: 35129, created_at: 123, content,
+    tags: [['d', 'weather'], ...tags] }, key);
+  const f = parseManifest(file([['f', 'index.html', hash, 'text/html']], '<!doctype html>'));
+  assert.equal(f?.hash, hash); assert.equal(f?.address.endsWith(':weather'), true);
+  const path = parseManifest(file([['path', '/index.html', hash], ['x', 'b'.repeat(64), 'aggregate'],
+    ['requires', 'identity']]));
+  assert.equal(path?.hash, hash); assert.equal(path?.identity, true);
+  assert.equal(parseManifest(manifest(15129, [['O', 'identity']]))?.identity, true);
+  assert.equal(parseManifest(manifest())?.identity, false);
+  for (const tags of [
+    [['f', 'index.html', hash], ['f', 'app.js', hash]], [['path', '/index.html', hash], ['path', '/a.css', hash]],
+    [['f', 'app.js', hash]], [['f', 'index.html', hash, 'image/png']], [['f', 'index.html', 'nothex']],
+    [['f', 'index.html', hash], ['x', hash]],
+  ]) assert.equal(parseManifest(file(tags)), null, JSON.stringify(tags));
+});

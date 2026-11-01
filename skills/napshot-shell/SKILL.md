@@ -58,7 +58,7 @@ A label’s tags have this shape (metavariables are explanatory):
 
 Cache by manifest event ID and image hash. Invalidate the association when the manifest revision or trusted signer set changes. If multiple trusted labels are usable, apply a deterministic policy (for example, configured signer preference followed by newest event and lexicographic event ID). Never choose based on an untrusted signer’s timestamp.
 
-A Napshot capture is an automated signed-out Paja view. Network-dependent or account-dependent content may be empty. A signed label proves who published the preview; it does not endorse the napplet or grant it capabilities.
+A Napshot capture is an automated offline Paja view, signed out unless the napplet declares the `identity` NAP and the instance shows a read-only preview account. Network-dependent or account-dependent content may be empty. A signed label proves who published the preview; it does not endorse the napplet or grant it capabilities.
 
 ## Proof before completion
 

@@ -20,7 +20,7 @@ export function createSite(worker?: Worker) {
 }
 
 function sendStatus(path: string, response: ServerResponse, worker?: Worker): void {
-  const healthy = !!worker?.lastScan && Date.now() / 1000 - worker.lastScan < Math.max(120, worker.config.pollMs / 1000 * 3);
+  const healthy = !!worker?.lastScan && Date.now() / 1000 - worker.lastScan < 120;
   response.writeHead(path === '/healthz' && !healthy ? 503 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   response.end(JSON.stringify(status(worker)));
 }
