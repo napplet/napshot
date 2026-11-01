@@ -5,7 +5,8 @@ import { fetchArtifact, pngDimensions, sha256, uploadScreenshot } from './blosso
 import { capture } from './capture.ts';
 import type { Config } from './config.ts';
 import { Network } from './network.ts';
-import { buildLabel, hasScreenshot, isScreenshotLabel, KINDS, parseManifest, type Manifest } from './protocol.ts';
+import { buildLabel, hasScreenshot, isPreviewIdentityLabel, isScreenshotLabel, KINDS, parseManifest, requiresIdentity,
+  type Manifest } from './protocol.ts';
 import { Relays } from './relay.ts';
 import type { Store, Job } from './store.ts';
 
@@ -34,6 +35,7 @@ export class Worker {
 
   /** Run live ingestion, periodic safety resyncs and `concurrency` processors until aborted. */
   async run(signal: AbortSignal): Promise<void> {
+    this.refreshIdentityCaptures();
     const tasks = [
       ...this.config.relays.map(relay => this.watch(relay, signal)),
       ...Array.from({ length: this.config.concurrency }, () => this.drain(signal)),
@@ -41,6 +43,18 @@ export class Worker {
     ];
     signal.addEventListener('abort', () => this.wake(), { once: true });
     await Promise.all(tasks);
+  }
+
+  /**
+   * Identity napplets captured signed out (before a preview identity was configured, or before their
+   * manifest shape was recognised) are queued again so shells get a signed-in preview.
+   */
+  refreshIdentityCaptures(): number {
+    if (!this.config.previewIdentity) return 0;
+    const requeued = this.store.requeue((manifest, label) =>
+      requiresIdentity(manifest.event.tags) && !hasScreenshot(manifest.event.tags) && !(label && isPreviewIdentityLabel(label)));
+    if (requeued) { this.log('info', 'identity_recapture_queued', { count: requeued }); this.wake(); }
+    return requeued;
   }
 
   /** One complete catch-up pass over every relay. */
@@ -189,7 +203,8 @@ export class Worker {
     }
     return true;
   }
-  private async alreadyLabeled(manifest: Manifest): Promise<boolean> {
+  /** The trusted label that already settles this manifest, if any. */
+  private async existingLabel(manifest: Manifest): Promise<Event | undefined> {
     const results = await Promise.allSettled(this.config.relays.map(relay => this.relays.query(relay, {
       kinds: [1985], '#e': [manifest.event.id], '#L': ['#screenshot'], authors: this.config.trustedAuthors, limit: 500,
     })));
@@ -201,7 +216,10 @@ export class Worker {
       return [];
     });
     if (!replies.length) throw new Error('No relay answered screenshot label lookup');
-    return replies.flat().some(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors));
+    // A signed-out label does not settle a napplet that should be shown the preview identity.
+    const identity = Boolean(this.identityFor(manifest));
+    return replies.flat().find(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors)
+      && (!identity || isPreviewIdentityLabel(event)));
   }
   private async process(job: Job): Promise<void> {
     if (job.label) {
@@ -209,7 +227,9 @@ export class Worker {
       this.store.finish(job.id); return;
     }
     const manifest: Manifest = JSON.parse(job.manifest);
-    if (await this.alreadyLabeled(manifest)) { this.store.finish(job.id, 'skipped'); return; }
+    const existing = await this.existingLabel(manifest);
+    // Keep the settling label so a later identity refresh can see the capture was already signed in.
+    if (existing) { this.store.label(job.id, existing); this.store.finish(job.id, 'skipped'); return; }
     const png = job.png ? Buffer.from(job.png) : await this.makeCapture(manifest);
     const dimensions = pngDimensions(png);
     if (!job.png) this.store.capture(job.id, png);
@@ -233,7 +253,8 @@ export class Worker {
     return active;
   }
   private identityFor(manifest: Manifest): string | undefined {
-    return manifest.identity ? this.config.previewIdentity : undefined;
+    // Derive from the signed tags rather than the stored flag, so jobs queued under an older rule follow the current one.
+    return requiresIdentity(manifest.event.tags) ? this.config.previewIdentity : undefined;
   }
   private async makeCapture(manifest: Manifest): Promise<Buffer> {
     // Legacy single-file manifests often inline the exact artifact; use it when the hash proves it.

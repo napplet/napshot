@@ -21,8 +21,10 @@ Shells discover these previews through Nostr without changing the author’s man
 - **Verifiable delivery.** Uploaded bytes are read back and checked before their servers appear in the label.
 - **One process.** The worker also serves a small explainer page, public status, and a health endpoint.
 
-Captures show the initial **offline view**. Napplets that declare the `identity` NAP are shown a
-configured read-only preview account (`NAPSHOT_PREVIEW_IDENTITY`); all others are signed out.
+Captures show the initial **offline view**. Napplets that declare the `identity` NAP (a required `R`,
+optional `O`, or legacy `requires` tag) are shown a configured read-only preview account
+(`NAPSHOT_PREVIEW_IDENTITY`); all others are signed out. Once a preview identity is configured, identity
+napplets whose only preview was captured signed out are queued again and relabeled.
 Apps that need network data or interaction may show an empty or loading state. Snapshots (`5129`) are excluded.
 
 ## Quick start
@@ -139,7 +141,7 @@ publication waits until the configured minimum is met.
 | `NAPSHOT_BACKFILL_SINCE` | Oldest manifest timestamp to backfill (unix seconds), default `0` (all history); lowering it later extends the backfill |
 | `NAPSHOT_CONCURRENCY` | Captures processed in parallel, each in its own browser, default `3` |
 | `NAPSHOT_RESYNC_MS` | Safety-net catch-up interval behind the live relay subscriptions, default `900000` |
-| `NAPSHOT_PREVIEW_IDENTITY` | Optional `npub` or hex public key shown read-only to napplets that require `identity`; no signer is exposed |
+| `NAPSHOT_PREVIEW_IDENTITY` | Optional `npub` or hex public key shown read-only to napplets that declare the `identity` NAP (`R`, `O`, or `requires`); no signer is exposed |
 | `NAPSHOT_WIDTH`, `NAPSHOT_HEIGHT` | Capture dimensions, default `1200` × `750` |
 | `NAPSHOT_CAPTURE_DELAY_MS` | Settle time after loading, default `1500` |
 | `NAPSHOT_CAPTURE_TIMEOUT_MS` | Overall browser capture limit, default `45000` |

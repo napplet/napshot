@@ -57,6 +57,8 @@ Deno.test('single-file legacy maps are renderable; multi-file sites are not', ()
     ['requires', 'identity']]));
   assert.equal(path?.hash, hash); assert.equal(path?.identity, true);
   assert.equal(parseManifest(manifest(15129, [['O', 'identity']]))?.identity, true);
+  assert.equal(parseManifest(manifest(15129, [['R', 'identity'], ['R', 'outbox']]))?.identity, true, 'required NAPs use R');
+  assert.equal(parseManifest(manifest(15129, [['R', 'outbox'], ['O', 'theme']]))?.identity, false);
   assert.equal(parseManifest(manifest())?.identity, false);
   for (const tags of [
     [['f', 'index.html', hash], ['f', 'app.js', hash]], [['path', '/index.html', hash], ['path', '/a.css', hash]],

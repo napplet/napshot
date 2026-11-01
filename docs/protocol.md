@@ -52,7 +52,9 @@ back by its content-addressed hash before inclusion in the annotation.
 This is the Napshot interoperability profile. The NIP-5D working draft and upstream
 capture code can evolve; this service handles `15129`/`35129` manifests with exactly one HTML
 artifact (a bare `x` hash, or a legacy `f`/`path` map containing only `index.html`), not
-multi-file sites. When a napplet declares the `identity` NAP and the operator configured a
-preview identity, the label content reads
-`Napplet preview captured by Napshot with a read-only preview identity.` Source:
+multi-file sites. When a napplet declares the `identity` NAP (an `R`, `O`, or legacy `requires`
+tag) and the operator configured a preview identity, the label content reads
+`Napplet preview captured by Napshot with a read-only preview identity.` For such a napplet only a
+label with that content settles the revision; a signed-out label is superseded by a new signed-in
+capture and label, and shells should prefer the newest trusted label. Source:
 [napplet CLI](https://github.com/napplet/napplet/tree/master/packages/cli).

@@ -36,9 +36,20 @@ function htmlFileHash([, path = '', hash = '', type]: string[]): string | undefi
   return type === undefined || /^text\/html\b/i.test(type) ? hash : undefined;
 }
 
-/** Napplets that declare the identity NAP render with the operator's preview account. */
-function requiresIdentity(tags: string[][]): boolean {
-  return tags.some(t => (t[0] === 'requires' || t[0] === 'O') && t[1] === 'identity');
+/**
+ * Napplets that declare the identity NAP render with the operator's preview account.
+ * Manifests list required NAPs under `R` and optional ones under `O`; older manifests use `requires`.
+ */
+export function requiresIdentity(tags: string[][]): boolean {
+  return tags.some(t => (t[0] === 'R' || t[0] === 'O' || t[0] === 'requires') && t[1] === 'identity');
+}
+
+export const SIGNED_OUT_CONTENT = 'Signed-out napplet preview captured by Napshot.';
+export const PREVIEW_IDENTITY_CONTENT = 'Napplet preview captured by Napshot with a read-only preview identity.';
+
+/** A label whose capture showed the napplet a preview account rather than a signed-out shell. */
+export function isPreviewIdentityLabel(event: Event): boolean {
+  return event.content === PREVIEW_IDENTITY_CONTENT;
 }
 
 function manifestName(event: Event): string | undefined {
@@ -77,8 +88,7 @@ export function isScreenshotLabel(event: Event, target: string, authors: string[
 /** Sign an additive annotation; the author manifest is never modified. */
 export function buildLabel(manifest: Manifest, shot: Shot, key: Uint8Array, relay: string, signedIn = false): Event {
   return finalizeEvent({ kind: 1985, created_at: Math.floor(Date.now() / 1000),
-    content: signedIn ? 'Napplet preview captured by Napshot with a read-only preview identity.'
-      : 'Signed-out napplet preview captured by Napshot.',
+    content: signedIn ? PREVIEW_IDENTITY_CONTENT : SIGNED_OUT_CONTENT,
     tags: [
       ['L', '#screenshot'], ['l', shot.hash, '#screenshot'], ['e', manifest.event.id, relay],
       ['a', manifest.address], ['p', manifest.event.pubkey],
