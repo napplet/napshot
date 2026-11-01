@@ -42,7 +42,7 @@ export async function fetchArtifact(manifest: Manifest, fallback: string[], netw
 /** Upload and read back identical PNG bytes before advertising a Blossom replica. */
 export async function uploadScreenshot(data: Buffer, server: string, key: Uint8Array, network: Network): Promise<void> {
   const hash = sha256(data);
-  try { await upload(data, hash, server, key, network); }
+  try { await upload(data, hash, { server, key, network }); }
   catch (error) {
     // A server may refuse a duplicate (e.g. 409) of bytes it already serves; the readback proves the replica.
     if (!await serves(data, hash, server, network)) throw error;
@@ -57,15 +57,25 @@ async function serves(data: Buffer, hash: string, server: string, network: Netwo
   catch { return false; }
 }
 
-async function upload(data: Buffer, hash: string, server: string, key: Uint8Array, network: Network): Promise<void> {
+interface UploadTarget { server: string; key: Uint8Array; network: Network }
+
+async function upload(data: Buffer, hash: string, target: UploadTarget, scope = new URL(target.server).hostname): Promise<void> {
+  const { server, key, network } = target;
   const now = Math.floor(Date.now() / 1000);
   const auth = finalizeEvent({ kind: 24242, created_at: now - 1, content: 'Upload a Napshot screenshot',
-    tags: [['t', 'upload'], ['x', hash], ['server', new URL(server).hostname], ['expiration', String(now + 300)]],
+    tags: [['t', 'upload'], ['x', hash], ['server', scope], ['expiration', String(now + 300)]],
   }, key);
-  const response = await network.request(`${server}/upload`, { method: 'PUT', body: data, maxBytes: 65536,
-    headers: { authorization: `Nostr ${Buffer.from(JSON.stringify(auth)).toString('base64url')}`,
-      'content-type': 'image/png', 'content-length': String(data.length), 'x-sha-256': hash },
-  });
+  let response: Buffer;
+  try {
+    response = await network.request(`${server}/upload`, { method: 'PUT', body: data, maxBytes: 65536,
+      headers: { authorization: `Nostr ${Buffer.from(JSON.stringify(auth)).toString('base64url')}`,
+        'content-type': 'image/png', 'content-length': String(data.length), 'x-sha-256': hash },
+    });
+  } catch (error) {
+    // BUD-11 scopes tokens by domain name, but some servers compare the tag against their full URL instead.
+    if (scope !== server && error instanceof Error && error.message === 'HTTP 401') return upload(data, hash, target, server);
+    throw error;
+  }
   const descriptor = JSON.parse(response.toString()) as { sha256?: string; size?: number; type?: string; url?: string };
   if (descriptor.sha256 !== hash || descriptor.size !== data.length || descriptor.type !== 'image/png') {
     throw new Error('Blossom descriptor does not match screenshot');

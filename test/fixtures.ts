@@ -109,7 +109,7 @@ export async function blossomFixture() {
   const uploads: Buffer[] = [];
   const authorizations: Event[] = [];
   const failures: string[] = [];
-  const behavior = { rejectUpload: false, corruptReadback: false };
+  const behavior = { rejectUpload: false, corruptReadback: false, serverScope: 'hostname' as 'hostname' | 'origin' };
   let origin = '';
   const server = createServer((request, response) => {
     if (request.method === 'GET') {
@@ -135,7 +135,10 @@ export async function blossomFixture() {
         assert.ok(Number(event.tags.find(tag => tag[0] === 'expiration')?.[1]) > now);
         assert.ok(event.tags.some(tag => tag[0] === 'x' && tag[1] === hash));
         assert.ok(event.tags.some(tag => tag[0] === 't' && tag[1] === 'upload'));
-        assert.ok(event.tags.some(tag => tag[0] === 'server' && tag[1] === new URL(origin).hostname));
+        const scope = behavior.serverScope === 'origin' ? origin : new URL(origin).hostname;
+        if (!event.tags.some(tag => tag[0] === 'server' && tag[1] === scope)) {
+          response.writeHead(401).end('Server URL mismatch'); return;
+        }
         assert.equal(request.headers['x-sha-256'], hash);
         assert.equal(request.headers['content-type'], 'image/png');
         assert.equal(Number(request.headers['content-length']), data.length);

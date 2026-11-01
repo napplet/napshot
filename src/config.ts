@@ -94,6 +94,6 @@ function captureConfig(env: Record<string, string | undefined>): Config['capture
     delayMs: integer(env, 'NAPSHOT_CAPTURE_DELAY_MS', 1500, 0, 10000),
     idleMs: integer(env, 'NAPSHOT_CAPTURE_IDLE_MS', 2000, 100, 30000),
     settleMs: integer(env, 'NAPSHOT_CAPTURE_SETTLE_MS', 15000, 0, 60000),
-    timeoutMs: integer(env, 'NAPSHOT_CAPTURE_TIMEOUT_MS', 45000, 1000, 120000),
+    timeoutMs: integer(env, 'NAPSHOT_CAPTURE_TIMEOUT_MS', 60000, 1000, 120000),
   };
 }
