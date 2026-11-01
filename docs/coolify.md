@@ -49,7 +49,9 @@ Leave these container paths and port unchanged. Optional runtime values are
 `NAPSHOT_MIN_REPLICAS=2`, `NAPSHOT_CONCURRENCY=3`, `NAPSHOT_BACKFILL_SINCE=0`
 (all history), `NAPSHOT_RESYNC_MS=900000`, and `NAPSHOT_TRUSTED_AUTHORS=` (additional
 comma-separated hex public keys). The homelab manifest sets `NAPSHOT_PREVIEW_IDENTITY`
-to the operator's public npub so identity napplets render signed in, read-only. Two verified mirrors are always required.
+to the operator's public npub so identity napplets render signed in, read-only, and
+`NAPSHOT_RECAPTURE_BEFORE` to the unix time of the last renderer change so older previews
+are regenerated once and their labels retracted. Two verified mirrors are always required.
 
 The homelab manifest also manages the public `NAPSHOT_PROFILE` JSON value. It
 enables kind-0 and NIP-65 publication using the existing signer and relay list.

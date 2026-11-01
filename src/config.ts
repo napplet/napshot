@@ -14,6 +14,8 @@ export interface Config {
   concurrency: number;
   /** Optional read-only pubkey shown to napplets that require identity. */
   previewIdentity?: string;
+  /** Labels published before this unix time are regenerated once (fonts, shell or renderer upgrades). */
+  recaptureBefore: number;
   capture: { executablePath?: string; width: number; height: number; delayMs: number; idleMs: number; settleMs: number; timeoutMs: number };
   profile?: Record<string, unknown>;
 }
@@ -48,6 +50,7 @@ export function loadConfig(env: Record<string, string | undefined> = Deno.env.to
     resyncMs: integer(env, 'NAPSHOT_RESYNC_MS', 900000, 10000, 86400000),
     concurrency: integer(env, 'NAPSHOT_CONCURRENCY', 3, 1, 16),
     previewIdentity: previewIdentity(env.NAPSHOT_PREVIEW_IDENTITY),
+    recaptureBefore: integer(env, 'NAPSHOT_RECAPTURE_BEFORE', 0, 0, 4102444800),
     minReplicas: integer(env, 'NAPSHOT_MIN_REPLICAS', 2, 2, blossomServers.length),
     capture: captureConfig(env), profile: profileConfig(env.NAPSHOT_PROFILE),
   };

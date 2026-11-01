@@ -37,7 +37,7 @@ async function environment(relayTimeoutMs = 250) {
   const key = generateSecretKey();
   const config: Config = { key, pubkey: getPublicKey(key), relays: [relay.url],
     blossomServers: [first.origin, second.origin], trustedAuthors: [getPublicKey(key)], dataDir: directory,
-    host: '127.0.0.1', port: 0, backfillSince: 0, resyncMs: 60000, concurrency: 2, minReplicas: 2,
+    host: '127.0.0.1', port: 0, backfillSince: 0, resyncMs: 60000, concurrency: 2, minReplicas: 2, recaptureBefore: 0,
     capture: { executablePath: Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium', width: 320, height: 200,
       delayMs: 100, idleMs: 300, settleMs: 2000, timeoutMs: 15000 },
   };
@@ -408,6 +408,9 @@ Deno.test('napplets captured with fewer shell features are recaptured, and the o
     assert.deepEqual(store.counts(), { pending: 0, done: 4, failed: 0 });
     delete env.config.previewIdentity;
     assert.equal(worker.refreshCaptures(), 0, 'richer captures are never stale once the preview identity is removed');
+    env.config.recaptureBefore = Math.floor(Date.now() / 1000) + 1;
+    assert.equal(worker.refreshCaptures(), 6, 'an operator cut-off regenerates every finished preview, author media excepted');
+    assert.equal(store.counts().pending, 6);
   } finally { store.close(); await env.close(); }
 });
 
