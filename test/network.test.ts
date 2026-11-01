@@ -13,11 +13,17 @@ Deno.test('public-address policy rejects local, mapped and reserved networks', (
 Deno.test('requests pin hostname DNS, bound bodies and reject redirects/private access', async () => {
   const server = http.createServer((req,res) => {
     if (req.url === '/redirect') res.writeHead(302,{location:'http://127.0.0.1/secret'}).end();
+    else if (req.url === '/cdn') res.writeHead(302,{location:'/blob'}).end();
+    else if (req.url === '/loop') res.writeHead(302,{location:'/loop'}).end();
+    else if (req.url === '/blob') res.end('blob');
     else res.end('fixture');
   });
   await new Promise<void>(done => server.listen(0, '127.0.0.1',done));
   const url = `http://localhost:${(server.address() as AddressInfo).port}`;
   try {
+    assert.equal((await new Network(true).request(`${url}/cdn`, {redirects:3})).toString(), 'blob', 'opt-in redirect');
+    await assert.rejects(new Network(true).request(`${url}/loop`, {redirects:3}), /HTTP 302/, 'redirects are bounded');
+    await assert.rejects(new Network(true).request(`${url}/cdn`, {method:'PUT', redirects:3}), /HTTP 302/, 'GET only');
     assert.equal((await new Network(true).request(url)).toString(), 'fixture');
     await assert.rejects(new Network(true).request(url, {maxBytes:2}), /size limit/);
     await assert.rejects(new Network(true).request(`${url}/redirect`), /HTTP 302/);

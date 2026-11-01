@@ -21,12 +21,25 @@ export function isPublicAddress(address: string): boolean {
 }
 export interface RequestOptions {
   method?: string; body?: Buffer; headers?: Record<string, string>; maxBytes?: number; timeoutMs?: number;
+  /** GET only: follow up to this many redirects, re-validating every hop. Default 0. */
+  redirects?: number;
 }
 
-/** Bounded HTTP with pinned DNS and no redirects. Private access is available only to injected test clients. */
+/**
+ * Bounded HTTP with pinned DNS. Redirects are refused unless a caller that verifies content by
+ * hash opts in; each hop is then checked against the same HTTPS and public-address policy.
+ * Private access is available only to injected test clients.
+ */
 export class Network {
   constructor(private readonly allowPrivate = false) {}
   async request(input: string, options: RequestOptions = {}): Promise<Buffer> {
+    let url = input;
+    for (let hop = 0; ; hop++) {
+      try { return await this.once(url, options); }
+      catch (error) { url = followable(error, url, hop, options); }
+    }
+  }
+  private async once(input: string, options: RequestOptions): Promise<Buffer> {
     const url = requestUrl(input, this.allowPrivate);
     const addresses = await resolveAddresses(url.hostname.replace(/^\[|\]$/g, ''), this.allowPrivate);
     const address = addresses[0];
@@ -40,7 +53,10 @@ export class Network {
         },
       }, response => {
         if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-          reject(new Error(`HTTP ${response.statusCode}`)); response.destroy(); request.destroy(); return;
+          const location = response.headers.location;
+          reject(location && [301, 302, 303, 307, 308].includes(response.statusCode ?? 0)
+            ? new Redirect(response.statusCode!, location) : new Error(`HTTP ${response.statusCode}`));
+          response.destroy(); request.destroy(); return;
         }
         const chunks: Buffer[] = []; let size = 0;
         response.on('data', (chunk: Buffer) => {
@@ -59,6 +75,17 @@ export class Network {
       request.end(options.body);
     });
   }
+}
+
+class Redirect extends Error {
+  constructor(readonly status: number, readonly location: string) { super(`HTTP ${status}`); }
+}
+
+/** Next hop for an opted-in GET redirect; otherwise rethrow as a plain HTTP error. */
+function followable(error: unknown, url: string, hop: number, options: RequestOptions): string {
+  if (!(error instanceof Redirect)) throw error;
+  if (hop >= (options.redirects ?? 0) || (options.method ?? 'GET') !== 'GET') throw new Error(`HTTP ${error.status}`);
+  return new URL(error.location, url).href;
 }
 
 function requestUrl(input: string, allowPrivate: boolean): URL {

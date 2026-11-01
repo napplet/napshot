@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { finalizeEvent, generateSecretKey } from 'nostr-tools';
-import { fetchArtifact, sha256 } from '../src/blossom.ts';
+import { fetchArtifact, sha256, uploadScreenshot } from '../src/blossom.ts';
 import { parseManifest } from '../src/protocol.ts';
 import { Network } from '../src/network.ts';
 
@@ -21,4 +21,17 @@ Deno.test('untrusted hint count cannot displace operator artifact fallbacks', as
   const result = await fetchArtifact(parseManifest(event)!, ['https://operator.example'], new FixtureNetwork());
   assert.deepEqual(result,html);
   assert.ok(visited.length <= 17);
+});
+
+Deno.test('a refused duplicate upload counts only when the server already serves the exact bytes', async () => {
+  const png = Buffer.from('png bytes'); const key = generateSecretKey();
+  const fixture = (served: Buffer | null) => new class extends Network {
+    override request(_url: string, options: { method?: string } = {}): Promise<Buffer> {
+      if (options.method === 'PUT') return Promise.reject(new Error('HTTP 409'));
+      return served ? Promise.resolve(served) : Promise.reject(new Error('HTTP 404'));
+    }
+  }();
+  await uploadScreenshot(png, 'https://dup.example', key, fixture(png));
+  await assert.rejects(uploadScreenshot(png, 'https://dup.example', key, fixture(null)), /HTTP 409/);
+  await assert.rejects(uploadScreenshot(png, 'https://dup.example', key, fixture(Buffer.from('other'))), /HTTP 409/);
 });
