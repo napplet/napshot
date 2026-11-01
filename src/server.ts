@@ -1,36 +1,46 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { Feed, status } from './feed.ts';
+import type { Relays } from './relay.ts';
 import type { Worker } from './worker.ts';
 
-/** Serve the public explainer and redacted operator status, with no write endpoints. */
-export function createSite(worker?: Worker) {
-  return createServer((request, response) => {
+const POLICY = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src 'self'; " +
+  "object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+/** Serve the public viewer, its read-only capture feed and redacted operator status, with no write endpoints. */
+export function createSite(worker?: Worker, options: { relays?: Relays; profileRelays?: string[] } = {}) {
+  const feed = new Feed(worker, options);
+  const server = createServer((request, response) => {
     response.setHeader('x-content-type-options', 'nosniff');
     response.setHeader('referrer-policy', 'no-referrer');
-    const policy = "default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'";
-    response.setHeader('content-security-policy', policy);
+    response.setHeader('content-security-policy', POLICY);
     if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405).end(); return; }
     const path = new URL(request.url ?? '/', 'http://localhost').pathname;
-    if (path === '/api/status' || path === '/healthz') {
-      sendStatus(path, response, worker);
-      return;
-    }
-    sendStatic(path, response);
+    if (!sendApi(path, response, feed, worker)) sendStatic(path, response);
   });
+  server.on('close', () => feed.close());
+  return server;
+}
+
+function sendApi(path: string, response: ServerResponse, feed: Feed, worker?: Worker): boolean {
+  if (path === '/api/status' || path === '/healthz') { sendStatus(path, response, worker); return true; }
+  if (path === '/api/captures') { json(response, 200, feed.snapshot()); return true; }
+  if (path === '/api/stream') { feed.attach(response); return true; }
+  const match = /^\/api\/event\/([0-9a-f]{64})$/.exec(path);
+  if (!match) return false;
+  const event = feed.event(match[1]);
+  json(response, event ? 200 : 404, event ?? { error: 'Unknown event' });
+  return true;
+}
+
+function json(response: ServerResponse, code: number, body: unknown): void {
+  response.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  response.end(JSON.stringify(body));
 }
 
 function sendStatus(path: string, response: ServerResponse, worker?: Worker): void {
   const healthy = !!worker?.lastScan && Date.now() / 1000 - worker.lastScan < 120;
-  response.writeHead(path === '/healthz' && !healthy ? 503 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-  response.end(JSON.stringify(status(worker)));
-}
-
-function status(worker?: Worker) {
-  const config = worker?.config;
-  return { name: 'Napshot', pubkey: config?.pubkey ?? null,
-    relays: config?.relays ?? [], blossomServers: config?.blossomServers ?? [],
-    counts: worker?.store.counts() ?? { pending: 0, done: 0, failed: 0 }, lastScan: worker?.lastScan ?? null,
-    relayErrors: worker?.relayErrors ?? {} };
+  json(response, path === '/healthz' && !healthy ? 503 : 200, status(worker));
 }
 
 function sendStatic(path: string, response: ServerResponse): void {

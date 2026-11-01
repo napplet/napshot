@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import type { Event } from 'nostr-tools';
 import { Network, isPublicAddress } from '../src/network.ts';
+import { inboxRelays } from '../src/outbox.ts';
 
 Deno.test('public-address policy rejects local, mapped and reserved networks', () => {
   for (const ip of ['127.0.0.1','10.2.3.4','169.254.169.254','192.168.1.1','100.64.0.1','::1','::ffff:127.0.0.1',
@@ -30,4 +32,19 @@ Deno.test('requests pin hostname DNS, bound bodies and reject redirects/private 
     await assert.rejects(new Network().request(url), /HTTPS required/);
     await assert.rejects(new Network().request('https://127.0.0.1/'), /Non-public/);
   } finally { server.closeAllConnections(); await new Promise<void>(done => server.close(() => done())); }
+});
+
+Deno.test('untrusted relay URLs must be public wss:// without credentials', async () => {
+  await assert.rejects(new Network().relayUrl('ws://relay.example'), /Unsafe relay URL/);
+  await assert.rejects(new Network().relayUrl('https://relay.example'), /Unsafe relay URL/);
+  await assert.rejects(new Network().relayUrl('wss://user:pw@relay.example'), /Unsafe relay URL/);
+  await assert.rejects(new Network().relayUrl('wss://127.0.0.1'), /Non-public/);
+  await assert.rejects(new Network().relayUrl('wss://[::1]:7777'), /Non-public/);
+  assert.equal(await new Network(true).relayUrl('ws://127.0.0.1:7777'), 'ws://127.0.0.1:7777/');
+});
+
+Deno.test('NIP-65 inbox relays are unmarked or read entries, deduplicated and normalized', () => {
+  const list = { tags: [['r', 'wss://a.example'], ['r', 'wss://b.example', 'read'], ['r', 'wss://c.example', 'write'],
+    ['r', 'wss://a.example/'], ['r', 'bogus'], ['p', 'wss://d.example']] } as unknown as Event;
+  assert.deepEqual(inboxRelays(list), ['wss://a.example/', 'wss://b.example/']);
 });

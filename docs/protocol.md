@@ -26,6 +26,13 @@ The normal Nostr `id`, `sig`, `pubkey`, and `created_at` fields are added when s
 For a root manifest the address is `15129:<author>:` with a trailing colon. Named
 manifests use `35129:<author>:<d>`. Snapshots never receive annotations from this service.
 
+Delivery: a label must be acknowledged by at least one configured relay. After that, Napshot
+looks up the manifest author's newest [NIP-65](https://github.com/nostr-protocol/nips/blob/master/65.md)
+kind `10002` list on the configured relays and also sends the label to up to eight of the
+author's inbox relays (unmarked or `read` entries, `wss://` with public addresses only), so
+the `p`-tagged author sees it. This step is best effort: failures are logged and never retry
+or fail the job.
+
 Shell query:
 
 ```js

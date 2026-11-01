@@ -16,10 +16,13 @@ export interface Announcement {
   deliveries: Record<string, { acknowledged: boolean; attempts: number; nextAt: number }>;
 }
 
+export interface Capture { manifest: Manifest; label: Event }
+
 /** Single-owner SQLite queue. Capture and signed publication survive process restarts. */
 export class Store {
   private readonly db: DatabaseSync;
   private readonly lock: string;
+  private readonly listeners = new Set<() => void>();
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.lock = join(directory, 'worker.pid');
@@ -38,6 +41,7 @@ export class Store {
         CREATE TABLE IF NOT EXISTS announcements (pubkey TEXT NOT NULL, kind INTEGER NOT NULL,
           state TEXT NOT NULL, PRIMARY KEY (pubkey,kind));
         CREATE INDEX IF NOT EXISTS due ON jobs(status,next_at);
+        CREATE INDEX IF NOT EXISTS published ON jobs(status, json_extract(label,'$.created_at'));
       `);
       // A previous owner stopped mid-job; persisted capture/replica/label progress lets it resume.
       this.db.exec("UPDATE jobs SET status='pending' WHERE status='running'");
@@ -67,6 +71,7 @@ export class Store {
     this.db.prepare(`UPDATE jobs SET status='superseded', png=NULL WHERE address=? AND status IN ('pending','failed')
       AND id != (SELECT id FROM jobs WHERE address=? ORDER BY created_at DESC,id ASC LIMIT 1)`)
       .run(manifest.address, manifest.address);
+    if (inserted) this.changed();
     return inserted && !skip;
   }
   /**
@@ -122,12 +127,37 @@ export class Store {
   label(id: string, event: Event): void { this.db.prepare('UPDATE jobs SET label=? WHERE id=?').run(JSON.stringify(event), id); }
   finish(id: string, status = 'done'): void {
     this.db.prepare('UPDATE jobs SET status=?,png=NULL,error=NULL WHERE id=?').run(status, id);
+    this.changed();
   }
   fail(job: Job, error: string): void {
     const attempts = job.attempts + 1;
     const delay = Math.min(3600000, 5000 * 2 ** Math.min(attempts - 1, 10));
     this.db.prepare("UPDATE jobs SET status='failed',attempts=?,next_at=?,error=? WHERE id=?")
       .run(attempts, Date.now() + delay, error.slice(0, 300), job.id);
+    this.changed();
+  }
+  /** Newest published screenshot labels with their exact target manifests. */
+  recent(limit = 60): Capture[] {
+    const rows = this.db.prepare(`SELECT manifest,label FROM jobs WHERE status='done' AND label IS NOT NULL
+      ORDER BY json_extract(label,'$.created_at') DESC, id LIMIT ?`).all(limit) as { manifest: string; label: string }[];
+    return rows.map(row => ({ manifest: JSON.parse(row.manifest) as Manifest, label: JSON.parse(row.label) as Event }));
+  }
+  /** A published capture's napplet manifest (by job id) or its signed label (by label id). */
+  capturedEvent(id: string): Event | undefined {
+    const row = this.db.prepare(`SELECT id,manifest,label FROM jobs WHERE status='done' AND label IS NOT NULL
+      AND (id=? OR json_extract(label,'$.id')=?) LIMIT 1`).get(id, id) as { id: string; manifest: string; label: string } | undefined;
+    if (!row) return;
+    return row.id === id ? (JSON.parse(row.manifest) as Manifest).event : JSON.parse(row.label) as Event;
+  }
+  /** Observe queue changes (new manifests, finished or failed jobs); returns an unsubscribe function. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+  private changed(): void {
+    for (const listener of this.listeners) {
+      try { listener(); } catch { /* Observers never break queue writes. */ }
+    }
   }
   counts(): { pending: number; done: number; failed: number } {
     const counts = { pending: 0, done: 0, failed: 0 };

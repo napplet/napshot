@@ -19,7 +19,7 @@ Shells discover these previews through Nostr without changing the author’s man
 - **Author media first.** Usable screenshots in the manifest take precedence; trusted labels prevent duplicate work.
 - **Resumes after restart.** SQLite preserves jobs, captures, upload receipts, and signed labels through failures.
 - **Verifiable delivery.** Uploaded bytes are read back and checked before their servers appear in the label.
-- **One process.** The worker also serves a small explainer page, public status, and a health endpoint.
+- **One process.** The worker also serves a live capture viewer, public status, and a health endpoint.
 
 Captures show the initial **offline view**. Napplets that declare the `identity` NAP (a required `R`,
 optional `O`, or legacy `requires` tag) are shown a configured read-only preview account
@@ -62,7 +62,7 @@ Copy the key into `.env`, keep it private, and start the service:
 deno task start
 ```
 
-Open **<http://127.0.0.1:3080>** for the explainer and instance status. The startup log
+Open **<http://127.0.0.1:3080>** for the live capture viewer and instance status. The startup log
 and `/api/status` expose the public signer key that shell operators can verify and trust.
 
 To preview the page without a signing key or a running worker:
@@ -137,7 +137,7 @@ publication waits until the configured minimum is met.
 | `NAPSHOT_TRUSTED_AUTHORS` | Additional comma-separated hex labeler public keys; own signer is always trusted |
 | `NAPSHOT_DATA_DIR` | Local durable SQLite directory, default `./data` |
 | `NAPSHOT_CHROMIUM` | Browser executable, default `/usr/bin/chromium` |
-| `NAPSHOT_HOST`, `NAPSHOT_PORT` | Explainer/status bind, default `127.0.0.1:3080` |
+| `NAPSHOT_HOST`, `NAPSHOT_PORT` | Viewer/status bind, default `127.0.0.1:3080` |
 | `NAPSHOT_BACKFILL_SINCE` | Oldest manifest timestamp to backfill (unix seconds), default `0` (all history); lowering it later extends the backfill |
 | `NAPSHOT_CONCURRENCY` | Captures processed in parallel, each in its own browser, default `3` |
 | `NAPSHOT_RESYNC_MS` | Safety-net catch-up interval behind the live relay subscriptions, default `900000` |
@@ -246,6 +246,13 @@ least one relay is caught up (a complete scan or live heartbeat in the last two 
 with job IDs and bounded failure messages. A healthy scan does not imply every queued capture has succeeded; inspect the
 failed count and retry logs. Put a reverse proxy in front if exposing the page publicly.
 
+The viewer reads `/api/captures` (the 60 newest published labels with NIP-19 `nevent`/`naddr`
+encodings, Blossom mirror URLs and cached author kind 0 profiles) and stays current through the
+Server-Sent Events stream at `/api/stream`. `/api/event/<id>` returns the exact signed napplet
+manifest or label for a published capture. Author profiles are looked up in the background on
+the configured relays plus a few well-known metadata relays. If a reverse proxy buffers
+responses, disable buffering for `/api/stream`.
+
 </details>
 
 <details>
@@ -291,7 +298,7 @@ For protocol changes, update the [wire contract](docs/protocol.md) and
 ```text
 deploy/    # systemd user-service template
 docs/      # screenshot annotation contract
-public/    # explainer SPA
+public/    # live capture viewer SPA
 scripts/   # source structure and hygiene checks
 skills/    # napshot-shell integration skill
 src/       # watcher, durable queue, capture, uploads, and HTTP server
