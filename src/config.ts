@@ -1,11 +1,19 @@
 import { Buffer } from 'node:buffer';
-import { getPublicKey } from 'nostr-tools';
+import { getPublicKey, nip19 } from 'nostr-tools';
 import { serverOrigin } from './blossom.ts';
 import { HASH } from './protocol.ts';
 
 export interface Config {
   key: Uint8Array; pubkey: string; relays: string[]; blossomServers: string[]; trustedAuthors: string[];
-  dataDir: string; host: string; port: number; pollMs: number; lookbackSeconds: number; minReplicas: number;
+  dataDir: string; host: string; port: number; minReplicas: number;
+  /** Oldest manifest timestamp to backfill; lowering it extends the scanned history on next start. */
+  backfillSince: number;
+  /** Safety-net catch-up interval behind the live relay subscriptions. */
+  resyncMs: number;
+  /** Jobs processed in parallel, each with its own browser. */
+  concurrency: number;
+  /** Optional read-only pubkey shown to napplets that require identity. */
+  previewIdentity?: string;
   capture: { executablePath?: string; width: number; height: number; delayMs: number; timeoutMs: number };
   profile?: Record<string, unknown>;
 }
@@ -35,11 +43,25 @@ export function loadConfig(env: Record<string, string | undefined> = Deno.env.to
   return {
     key, pubkey, relays: [...new Set(relays)], blossomServers, trustedAuthors,
     dataDir: env.NAPSHOT_DATA_DIR ?? './data', host: env.NAPSHOT_HOST ?? '127.0.0.1',
-    port: integer(env, 'NAPSHOT_PORT', 3080, 1, 65535), pollMs: integer(env, 'NAPSHOT_POLL_MS', 30000, 1000, 3600000),
-    lookbackSeconds: integer(env, 'NAPSHOT_LOOKBACK_SECONDS', 86400, 0, 31536000),
+    port: integer(env, 'NAPSHOT_PORT', 3080, 1, 65535),
+    backfillSince: integer(env, 'NAPSHOT_BACKFILL_SINCE', 0, 0, 4102444800),
+    resyncMs: integer(env, 'NAPSHOT_RESYNC_MS', 900000, 10000, 86400000),
+    concurrency: integer(env, 'NAPSHOT_CONCURRENCY', 3, 1, 16),
+    previewIdentity: previewIdentity(env.NAPSHOT_PREVIEW_IDENTITY),
     minReplicas: integer(env, 'NAPSHOT_MIN_REPLICAS', 2, 2, blossomServers.length),
     capture: captureConfig(env), profile: profileConfig(env.NAPSHOT_PROFILE),
   };
+}
+
+function previewIdentity(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  if (HASH.test(value)) return value;
+  try {
+    const decoded = nip19.decode(value);
+    if (decoded.type === 'npub') return decoded.data;
+  } catch { /* Reported below. */ }
+  throw new Error('Invalid NAPSHOT_PREVIEW_IDENTITY: expected an npub or 64-character hex public key');
 }
 
 function profileConfig(raw: string | undefined): Config['profile'] {

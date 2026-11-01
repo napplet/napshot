@@ -33,6 +33,15 @@
       "is_buildtime": false,
       "is_runtime": true,
       "is_shown_once": false
+    },
+    {
+      "key": "NAPSHOT_PREVIEW_IDENTITY",
+      "value": "npub1uac67zc9er54ln0kl6e4qp2y6ta3enfcg7ywnayshvlw9r5w6ehsqq99rx",
+      "is_literal": true,
+      "is_preview": false,
+      "is_buildtime": false,
+      "is_runtime": true,
+      "is_shown_once": false
     }
   ]
 }

@@ -33,3 +33,18 @@ Deno.test('one optional profile setting enables metadata without a pubkey or NIP
     assert.throws(() => loadConfig({ ...env, NAPSHOT_PROFILE: raw }), /Invalid NAPSHOT_PROFILE/);
   }
 });
+
+Deno.test('queue settings default to full backfill, parallel capture and anonymous previews', () => {
+  const config = loadConfig(env);
+  assert.equal(config.backfillSince, 0);
+  assert.equal(config.concurrency, 3);
+  assert.equal(config.previewIdentity, undefined);
+  const hex = 'e771af0b05c8e95fcdf6feb3500544d2fb1ccd384788e9f490bb3ee28e8ed66f';
+  const npub = 'npub1uac67zc9er54ln0kl6e4qp2y6ta3enfcg7ywnayshvlw9r5w6ehsqq99rx';
+  assert.equal(loadConfig({ ...env, NAPSHOT_PREVIEW_IDENTITY: npub }).previewIdentity, hex);
+  assert.equal(loadConfig({ ...env, NAPSHOT_PREVIEW_IDENTITY: hex }).previewIdentity, hex);
+  for (const patch of [{ NAPSHOT_PREVIEW_IDENTITY: 'nsec1abc' }, { NAPSHOT_PREVIEW_IDENTITY: 'ABC' },
+    { NAPSHOT_CONCURRENCY: '0' }, { NAPSHOT_BACKFILL_SINCE: '-1' }, { NAPSHOT_RESYNC_MS: '5' }]) {
+    assert.throws(() => loadConfig({ ...env, ...patch }));
+  }
+});

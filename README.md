@@ -12,7 +12,7 @@
 </div>
 
 Napshot watches root (`15129`) and named (`35129`) napplet manifests for missing screenshots.
-It renders verified HTML in a fresh, signed-out Paja shell, mirrors the PNG to at least two
+It renders verified HTML in a fresh, offline Paja shell, mirrors the PNG to at least two
 Blossom servers, and publishes a signed NIP-32 label referencing the exact manifest event.
 Shells discover these previews through Nostr without changing the author’s manifest.
 
@@ -21,8 +21,9 @@ Shells discover these previews through Nostr without changing the author’s man
 - **Verifiable delivery.** Uploaded bytes are read back and checked before their servers appear in the label.
 - **One process.** The worker also serves a small explainer page, public status, and a health endpoint.
 
-Captures show the initial **signed-out, offline view**. Apps that need network data,
-authentication, or interaction may show an empty or loading state. Snapshots (`5129`) are excluded.
+Captures show the initial **offline view**. Napplets that declare the `identity` NAP are shown a
+configured read-only preview account (`NAPSHOT_PREVIEW_IDENTITY`); all others are signed out.
+Apps that need network data or interaction may show an empty or loading state. Snapshots (`5129`) are excluded.
 
 ## Quick start
 
@@ -118,8 +119,10 @@ publication waits until the configured minimum is met.
 | `NAPSHOT_DATA_DIR` | Local durable SQLite directory, default `./data` |
 | `NAPSHOT_CHROMIUM` | Browser executable, default `/usr/bin/chromium` |
 | `NAPSHOT_HOST`, `NAPSHOT_PORT` | Explainer/status bind, default `127.0.0.1:3080` |
-| `NAPSHOT_POLL_MS` | Relay scan interval after each scan, default `30000` |
-| `NAPSHOT_LOOKBACK_SECONDS` | First-run historical window, default `86400`; subsequent starts resume stored cursors |
+| `NAPSHOT_BACKFILL_SINCE` | Oldest manifest timestamp to backfill (unix seconds), default `0` (all history); lowering it later extends the backfill |
+| `NAPSHOT_CONCURRENCY` | Captures processed in parallel, each in its own browser, default `3` |
+| `NAPSHOT_RESYNC_MS` | Safety-net catch-up interval behind the live relay subscriptions, default `900000` |
+| `NAPSHOT_PREVIEW_IDENTITY` | Optional `npub` or hex public key shown read-only to napplets that require `identity`; no signer is exposed |
 | `NAPSHOT_WIDTH`, `NAPSHOT_HEIGHT` | Capture dimensions, default `1200` × `750` |
 | `NAPSHOT_CAPTURE_DELAY_MS` | Settle time after loading, default `1500` |
 | `NAPSHOT_CAPTURE_TIMEOUT_MS` | Overall browser capture limit, default `45000` |
@@ -170,22 +173,28 @@ Run it as a dedicated unprivileged user; the browser’s sandbox and capture res
 
 Stop the old worker before switching runtimes. Keep the same `.env`, signing key, and
 `NAPSHOT_DATA_DIR`, install the locked dependencies with Deno, and update the service command.
-The SQLite schema is unchanged, so queued captures, signed labels, upload receipts, and
+The SQLite schema only gains tables, so queued captures, signed labels, upload receipts, and
 relay cursors resume in place. Never run the old and new workers against the same data directory.
 To roll back, stop Deno, restore the previous code and service command, and reuse that data directory.
 
 <details>
 <summary><strong>Retries, recovery, and monitoring</strong></summary>
 
-- Only signed, current single-artifact root/named manifests enter the queue. Snapshots
-  (`5129`), legacy file-map manifests, malformed identities, and invalid signatures are ignored.
+- Only signed root/named manifests with exactly one HTML artifact enter the queue: a bare `x`
+  hash, or a legacy `f`/`path` file map containing only `index.html`. Inline HTML is used when
+  its hash matches. Snapshots (`5129`), multi-file sites, malformed identities, and invalid
+  signatures are ignored.
 - A usable author `screenshot` hash takes precedence. Trusted kind-1985 labels bound to
   the exact event ID also suppress work. Untrusted labels cannot veto a capture. Metadata
   presence is the skip criterion; Napshot does not repair a declared but unavailable author image.
-- Polling uses persisted per-relay cursors, a 60-second overlap, pagination and duplicate
-  IDs. Checkpoints advance only after a successful complete scan. Relay timeout is an
-  error, never an empty result. This cannot recover events a relay omits, timestamps
-  backdated outside the overlap, or relays that silently cap results below the requested limit.
+- Each relay holds a live subscription; new manifests are queued the moment they arrive and
+  idle processors wake immediately. On every (re)connect, a catch-up pass runs from the
+  persisted cursor with a 60-second overlap; the first pass per relay backfills all history
+  down to `NAPSHOT_BACKFILL_SINCE`. Paging continues until a relay returns an empty page, so
+  relays that cap `limit` below the request are still read to the end. Checkpoints advance
+  only after a complete pass, or while a caught-up subscription stays open. Relay timeout is
+  an error, never an empty result. A periodic resync (`NAPSHOT_RESYNC_MS`) covers relays that
+  drop live deliveries.
 - New revisions supersede queued older revisions at the same address, using NIP-01
   timestamp and event-ID ordering. Already published labels remain attached to their original revisions.
 - Jobs, captures, upload receipts and signed labels live in SQLite. Each output label
@@ -202,14 +211,16 @@ To roll back, stop Deno, restore the previous code and service command, and reus
   cannot prove global label absence, so duplicates remain possible across relay partitions.
 - The data directory allows one worker on one host. A stale PID lock is recovered after
   a crash. Do not share a data directory across containers/hosts with different PID spaces.
+- `NAPSHOT_CONCURRENCY` processors claim distinct jobs from the queue; a claim interrupted
+  by a restart returns to the queue with its persisted capture and replicas.
 - SIGINT/SIGTERM finish the current bounded operation, then close HTTP and SQLite.
   Restart after a forced kill resumes durable jobs. Back up the database with SQLite’s
   backup tooling or stop the service before copying its data directory, including WAL files.
 
 `/api/status` reports the signer, configured endpoints, queue counts and last successful
 scan; it contains no secret key or manifest content. `relayErrors` exposes failed relay
-scans and clears each error when that relay recovers. `/healthz` returns 200 after a
-recent complete scan from at least one configured relay, otherwise 503. Logs are JSON
+scans and clears each error when that relay recovers. `/healthz` returns 200 while at
+least one relay is caught up (a complete scan or live heartbeat in the last two minutes), otherwise 503. Logs are JSON
 with job IDs and bounded failure messages. A healthy scan does not imply every queued capture has succeeded; inspect the
 failed count and retry logs. Put a reverse proxy in front if exposing the page publicly.
 

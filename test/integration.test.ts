@@ -37,7 +37,7 @@ async function environment(relayTimeoutMs = 250) {
   const key = generateSecretKey();
   const config: Config = { key, pubkey: getPublicKey(key), relays: [relay.url],
     blossomServers: [first.origin, second.origin], trustedAuthors: [getPublicKey(key)], dataDir: directory,
-    host: '127.0.0.1', port: 0, pollMs: 1000, lookbackSeconds: 86400, minReplicas: 2,
+    host: '127.0.0.1', port: 0, backfillSince: 0, resyncMs: 60000, concurrency: 2, minReplicas: 2,
     capture: { executablePath: Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium', width: 320, height: 200,
       delayMs: 100, timeoutMs: 15000 },
   };
@@ -179,6 +179,19 @@ Deno.test('store locks one owner, supersedes old queued revisions and preserves 
   } finally { store?.close(); await env.close(); }
 });
 
+Deno.test('claimed jobs are invisible to other processors and resume after an interrupted owner', async () => {
+  const env = await environment(); let store: Store | undefined = new Store(env.directory);
+  const job = parseManifest(manifest())!;
+  try {
+    assert.equal(store.enqueue(job, false), true); assert.equal(store.enqueue(job, false), false);
+    assert.equal(store.claim()?.id, job.event.id);
+    assert.equal(store.claim(), undefined, 'a running job cannot be claimed twice');
+    assert.deepEqual(store.counts(), { pending: 1, done: 0, failed: 0 });
+    store.close(); store = new Store(env.directory);
+    assert.equal(store.claim()?.id, job.event.id, 'restart returns in-flight work to the queue');
+  } finally { store?.close(); await env.close(); }
+});
+
 Deno.test('relay timeout and CLOSED are errors; negative OK never completes publication', async () => {
   const relay = await relayFixture(); const client = new Relays([relay.url], 100);
   try {
@@ -216,25 +229,142 @@ Deno.test('scan paginates a full page without dropping equal-timestamp boundary 
   } finally { store.close(); await env.close(); }
 });
 
-Deno.test('first-scan outage preserves its initial backfill boundary across configuration changes and restart', async () => {
+Deno.test('first-scan outage keeps the full backfill pending across restart until it completes', async () => {
   const env = await environment(); let store: Store | undefined = new Store(env.directory);
-  env.relay.behavior.query = 'closed'; env.config.lookbackSeconds = 3600;
+  env.relay.behavior.query = 'closed';
+  env.relay.events.push(manifest({ createdAt: Math.floor(Date.now() / 1000) - 400 * 86400 }));
   try {
     let worker = env.worker(store); await worker.scan();
-    const baseline = store.cursor(env.relay.url);
-    const firstSince = env.relay.queries[0].since;
-    assert.equal(typeof baseline, 'number', 'initial boundary must be durable before the first query succeeds');
-    assert.equal(firstSince, baseline! - 60);
+    assert.equal(env.relay.queries[0].since, 0, 'history is backfilled from the configured floor');
+    assert.equal(store.cursor(env.relay.url), undefined); assert.equal(store.floor(env.relay.url), undefined);
     assert.equal(worker.lastScan, null);
-    store.close(); store = new Store(env.directory); env.config.lookbackSeconds = 0;
-    worker = env.worker(store); await worker.scan();
-    assert.equal(env.relay.queries.at(-1)?.since, firstSince, 'outage cannot slide the initial backfill window');
-    assert.equal(store.cursor(env.relay.url), baseline);
-    env.relay.behavior.query = 'normal'; await worker.scan();
-    assert.ok(store.cursor(env.relay.url)! > baseline!);
+    store.close(); store = new Store(env.directory);
+    worker = env.worker(store); env.relay.behavior.query = 'normal'; await worker.scan();
+    assert.equal(env.relay.queries.at(-1)?.since, 0);
+    assert.equal(store.counts().pending, 1, 'a year-old napplet is still captured');
+    assert.equal(store.floor(env.relay.url), 0); assert.ok(store.cursor(env.relay.url));
     assert.ok(worker.lastScan);
+    await worker.scan();
+    assert.ok(env.relay.queries.at(-1)!.since! > 0, 'after backfill, scans resume from the cursor');
   } finally { store?.close(); await env.close(); }
 });
+
+Deno.test('a database with a cursor but no backfill floor walks the history it never saw (issue #4)', async () => {
+  const env = await environment(); const store = new Store(env.directory);
+  const now = Math.floor(Date.now() / 1000);
+  store.checkpoint(env.relay.url, now - 10);
+  env.relay.events.push(manifest({ createdAt: now - 30 * 86400 }), manifest({ kind: 35129, createdAt: now - 2 }));
+  try {
+    const worker = env.worker(store); await worker.scan();
+    assert.equal(store.counts().pending, 2);
+    assert.equal(store.floor(env.relay.url), 0);
+  } finally { store.close(); await env.close(); }
+});
+
+Deno.test('lowering NAPSHOT_BACKFILL_SINCE extends the scanned history backwards', async () => {
+  const env = await environment(); const store = new Store(env.directory);
+  const now = Math.floor(Date.now() / 1000);
+  env.config.backfillSince = now - 3600;
+  env.relay.events.push(manifest({ createdAt: now - 7200 }));
+  try {
+    const worker = env.worker(store); await worker.scan();
+    assert.equal(store.counts().pending, 0); assert.equal(store.floor(env.relay.url), now - 3600);
+    env.config.backfillSince = 0; await worker.scan();
+    assert.equal(store.counts().pending, 1); assert.equal(store.floor(env.relay.url), 0);
+  } finally { store.close(); await env.close(); }
+});
+
+Deno.test('a relay that caps results below the page size is still paged to the end', async () => {
+  const env = await environment(); const store = new Store(env.directory);
+  env.relay.behavior.maxLimit = 3;
+  const now = Math.floor(Date.now() / 1000);
+  for (let index = 0; index < 10; index++) env.relay.events.push(manifest({ createdAt: now - 100 * index - 1 }));
+  try {
+    const worker = env.worker(store); await worker.scan();
+    assert.equal(store.counts().pending, 10);
+  } finally { store.close(); await env.close(); }
+});
+
+Deno.test('live subscription captures a newly published napplet within moments, without polling', async () => {
+  const env = await environment(1000); const store = new Store(env.directory);
+  const worker = env.worker(store); const stop = new AbortController();
+  const running = worker.run(stop.signal);
+  try {
+    await waitFor(() => env.relay.subscriptions.size > 0 && worker.lastScan !== null);
+    const queries = env.relay.queries.filter(filter => filter.kinds?.includes(15129)).length;
+    const published = Date.now();
+    env.relay.deliver(manifest());
+    await waitFor(() => env.relay.published.length === 1);
+    assert.ok(Date.now() - published < 3000, `captured in ${Date.now() - published}ms`);
+    assert.equal(env.relay.queries.filter(filter => filter.kinds?.includes(15129)).length, queries,
+      'the new manifest arrived over the open subscription, not a rescan');
+    assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
+  } finally { stop.abort(); await running; store.close(); await env.close(); }
+});
+
+Deno.test('a dropped live subscription reconnects and catches up on what it missed', async () => {
+  const env = await environment(1000); const store = new Store(env.directory);
+  const worker = env.worker(store); const stop = new AbortController();
+  const running = worker.run(stop.signal);
+  try {
+    await waitFor(() => env.relay.subscriptions.size > 0 && worker.lastScan !== null);
+    env.relay.disconnect();
+    env.relay.events.push(manifest()); // Stored while nobody is subscribed.
+    await waitFor(() => env.relay.published.length === 1, 8000);
+    await waitFor(() => env.relay.subscriptions.size > 0);
+    env.relay.deliver(manifest({ kind: 35129 }));
+    await waitFor(() => env.relay.published.length === 2);
+  } finally { stop.abort(); await running; store.close(); await env.close(); }
+});
+
+Deno.test('parallel processors capture distinct jobs concurrently, each exactly once', async () => {
+  const env = await environment(1000); const store = new Store(env.directory);
+  env.config.concurrency = 3;
+  let active = 0; let peak = 0; const seen: string[] = [];
+  const worker = env.worker(store, async bytes => {
+    active++; peak = Math.max(peak, active); seen.push(sha256(bytes));
+    await new Promise(resolve => setTimeout(resolve, 300)); active--;
+    return smallPng;
+  });
+  for (let index = 0; index < 6; index++) env.relay.events.push(manifest({ kind: 35129, name: `app-${index}` }));
+  const stop = new AbortController(); const running = worker.run(stop.signal);
+  try {
+    await waitFor(() => store.counts().done === 6, 10000);
+    assert.equal(peak, 3); assert.equal(seen.length, 6);
+    assert.equal(env.relay.published.length, 6);
+  } finally { stop.abort(); await running; store.close(); await env.close(); }
+});
+
+Deno.test('single-file manifests render inline HTML, and identity napplets get the preview account', async () => {
+  const env = await environment(); const store = new Store(env.directory);
+  env.config.previewIdentity = 'e771af0b05c8e95fcdf6feb3500544d2fb1ccd384788e9f490bb3ee28e8ed66f';
+  const inline = Buffer.from('<!doctype html><body>inline only</body>');
+  const legacy = finalizeEvent({ kind: 35129, created_at: Math.floor(Date.now() / 1000) - 1, content: inline.toString(),
+    tags: [['d', 'weather'], ['f', 'index.html', sha256(inline), 'text/html'], ['requires', 'identity']] }, generateSecretKey());
+  const plain = manifest();
+  env.relay.events.push(legacy, plain);
+  const renders: { html: string; identity?: string }[] = [];
+  const worker = env.worker(store, (bytes, options) => {
+    renders.push({ html: bytes.toString(), identity: options.identity }); return Promise.resolve(smallPng);
+  });
+  try {
+    await worker.scan();
+    while (await worker.processOne()) { /* Drain. */ }
+    assert.deepEqual(renders.find(render => render.html === inline.toString())?.identity, env.config.previewIdentity,
+      'inline artifact is used without Blossom, with the preview identity');
+    assert.equal(renders.find(render => render.html === html.toString())?.identity, undefined);
+    const label = env.relay.published.find(event => event.tags.some(tag => tag[0] === 'e' && tag[1] === legacy.id))!;
+    assert.match(label.content, /preview identity/);
+  } finally { store.close(); await env.close(); }
+});
+
+async function waitFor(condition: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('Timed out waiting for condition');
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
 
 for (const failure of ['closed', 'silent']) {
   Deno.test(`one ${failure} relay cannot veto healthy scans, capture or acknowledged publication`, async () => {

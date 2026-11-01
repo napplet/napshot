@@ -38,6 +38,32 @@ Deno.test('capture renders through the real Paja shim and crops to the napplet',
   }
 });
 
+Deno.test('a configured preview identity is visible to the napplet as a read-only public key', async () => {
+  const pubkey = 'e771af0b05c8e95fcdf6feb3500544d2fb1ccd384788e9f490bb3ee28e8ed66f';
+  const html = Buffer.from(`<!doctype html><html><body style="margin:0;min-height:100vh;background:rgb(220,10,10)">
+    <script>
+      (async () => {
+        const key = await window.napplet.identity.getPublicKey().catch(() => '');
+        document.body.style.background = key === '${pubkey}' ? 'rgb(20,180,80)' : key ? 'rgb(10,10,220)' : 'rgb(220,10,10)';
+      })();
+    </script></body></html>`);
+  const center = async (png: Buffer) => {
+    const browser = await chromium.launch({ executablePath: options.executablePath, chromiumSandbox: true });
+    try {
+      const page = await browser.newPage();
+      return await page.evaluate(async (encoded) => {
+        const image = new Image(); image.src = `data:image/png;base64,${encoded}`; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+        return Array.from(context.getImageData(160, 100, 1, 1).data);
+      }, png.toString('base64'));
+    } finally { await browser.close(); }
+  };
+  assert.deepEqual(await center(await capture(html, { ...options, identity: pubkey })), [20, 180, 80, 255]);
+  assert.notDeepEqual(await center(await capture(html, options)), [20, 180, 80, 255], 'anonymous by default');
+  await assert.rejects(capture(html, { ...options, identity: 'npub1nothex' }), /Invalid capture identity/);
+});
+
 Deno.test('capture blocks HTTP and WebSocket egress from a hostile artifact', async () => {
   let requests = 0;
   const sink = createServer((_request, response) => { requests++; response.end('leaked'); });

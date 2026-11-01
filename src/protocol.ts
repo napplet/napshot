@@ -2,25 +2,43 @@ import { finalizeEvent, verifyEvent, type Event } from 'nostr-tools';
 
 export const KINDS = [15129, 35129];
 export const HASH = /^[0-9a-f]{64}$/;
-export interface Manifest { event: Event; hash: string; address: string; servers: string[] }
+export interface Manifest { event: Event; hash: string; address: string; servers: string[]; identity?: boolean }
 export interface Shot { hash: string; size: number; width: number; height: number; servers: string[] }
 
-/** Parse current single-artifact NIP-5D manifests, excluding snapshots and legacy file maps. */
+/**
+ * Parse renderable single-HTML NIP-5D manifests: the current `x` shape plus legacy file maps
+ * that contain exactly one HTML file. Snapshots and multi-file sites are excluded.
+ */
 export function parseManifest(event: Event): Manifest | null {
   try {
-    if (!KINDS.includes(event.kind) || !verifyEvent(event) || !event.content.trim()) return null;
+    if (!KINDS.includes(event.kind) || !verifyEvent(event)) return null;
     const hash = artifactHash(event.tags);
     const name = manifestName(event);
-    if (!hash || name === undefined || event.tags.some(t => t[0] === 'f')) return null;
+    if (!hash || name === undefined) return null;
     return { event, hash, address: `${event.kind}:${event.pubkey}:${name}`,
-      servers: event.tags.filter(t => t[0] === 'server').map(t => t[1]).filter(Boolean) };
+      servers: event.tags.filter(t => t[0] === 'server').map(t => t[1]).filter(Boolean),
+      identity: requiresIdentity(event.tags) };
   } catch { return null; }
 }
 
+/** One artifact hash: a bare `x`, or the sole `f`/`path` entry of a one-file HTML map. */
 function artifactHash(tags: string[][]): string | undefined {
+  const files = tags.filter(t => t[0] === 'f' || t[0] === 'path');
+  const bare = tags.filter(t => t[0] === 'x' && t.length === 2);
+  if (files.length) return files.length === 1 && !bare.length ? htmlFileHash(files[0]) : undefined;
   const hashes = tags.filter(t => t[0] === 'x');
-  if (hashes.length !== 1 || hashes[0].length !== 2 || !HASH.test(hashes[0][1])) return;
-  return hashes[0][1];
+  if (hashes.length !== 1 || bare.length !== 1 || !HASH.test(bare[0][1])) return;
+  return bare[0][1];
+}
+
+function htmlFileHash([, path = '', hash = '', type]: string[]): string | undefined {
+  if (!HASH.test(hash) || !/^\/?index\.html?$/i.test(path)) return;
+  return type === undefined || /^text\/html\b/i.test(type) ? hash : undefined;
+}
+
+/** Napplets that declare the identity NAP render with the operator's preview account. */
+function requiresIdentity(tags: string[][]): boolean {
+  return tags.some(t => (t[0] === 'requires' || t[0] === 'O') && t[1] === 'identity');
 }
 
 function manifestName(event: Event): string | undefined {
@@ -57,9 +75,10 @@ export function isScreenshotLabel(event: Event, target: string, authors: string[
 }
 
 /** Sign an additive annotation; the author manifest is never modified. */
-export function buildLabel(manifest: Manifest, shot: Shot, key: Uint8Array, relay: string): Event {
+export function buildLabel(manifest: Manifest, shot: Shot, key: Uint8Array, relay: string, signedIn = false): Event {
   return finalizeEvent({ kind: 1985, created_at: Math.floor(Date.now() / 1000),
-    content: 'Signed-out napplet preview captured by Napshot.',
+    content: signedIn ? 'Napplet preview captured by Napshot with a read-only preview identity.'
+      : 'Signed-out napplet preview captured by Napshot.',
     tags: [
       ['L', '#screenshot'], ['l', shot.hash, '#screenshot'], ['e', manifest.event.id, relay],
       ['a', manifest.address], ['p', manifest.event.pubkey],

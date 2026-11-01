@@ -14,6 +14,8 @@ export interface CaptureOptions {
   height: number;
   delayMs: number;
   timeoutMs: number;
+  /** Read-only public key presented to napplets that ask for identity; no signer is exposed. */
+  identity?: string;
 }
 
 /** Render verified HTML in a fresh, anonymous Paja shell and return only its iframe PNG. */
@@ -47,7 +49,8 @@ export async function capture(html: Buffer, options: CaptureOptions): Promise<Bu
     const started = await startPajaServer({ options: {
       host: '127.0.0.1', port: 0, targetUrl,
       simulation: {
-        identity: { mode: 'anonymous' }, relay: { mode: 'memory' }, storage: { mode: 'memory' },
+        identity: options.identity ? { mode: 'fixed', pubkey: options.identity } : { mode: 'anonymous' },
+        relay: { mode: 'memory' }, storage: { mode: 'memory' },
         upload: { mode: 'disabled' }, media: { enabled: false }, notifications: { enabled: false },
         intent: { enabled: false }, cvm: { enabled: false },
       },
@@ -167,4 +170,5 @@ function validateOptions(options: CaptureOptions): void {
     const value = options[name as keyof typeof bounds];
     if (!Number.isInteger(value) || value < min || value > max) throw new Error(`Invalid capture ${name}`);
   }
+  if (options.identity !== undefined && !/^[0-9a-f]{64}$/.test(options.identity)) throw new Error('Invalid capture identity');
 }

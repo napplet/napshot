@@ -30,7 +30,15 @@ export async function relayFixture() {
   const published: Event[] = [];
   const queries: Filter[] = [];
   const sockets = new Set<Duplex>();
-  const behavior = { query: 'normal', publish: 'accept', duplicates: false, rejectKinds: [] as number[] };
+  const behavior = { query: 'normal', publish: 'accept', duplicates: false, rejectKinds: [] as number[], maxLimit: Infinity };
+  const subscriptions = new Map<string, { socket: Duplex; filter: Filter }>();
+  /** Store an event and stream it to open subscriptions, as a relay does after EOSE. */
+  const deliver = (event: Event) => {
+    events.push(event);
+    for (const [id, subscription] of subscriptions) {
+      if (matchFilter({ ...subscription.filter, limit: undefined }, event)) subscription.socket.write(encode(['EVENT', id, event]));
+    }
+  };
   const server = createServer((_request, response) => response.writeHead(426).end());
   const handle = (socket: Duplex, frame: unknown[]) => {
     if (frame[0] === 'REQ') {
@@ -39,18 +47,21 @@ export async function relayFixture() {
       if (behavior.query === 'silent') return;
       if (behavior.query === 'closed') { socket.write(encode(['CLOSED', id, 'unavailable'])); return; }
       const matched = events.filter(event => matchFilter(filter, event))
-        .sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, filter.limit ?? 500);
+        .sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id))
+        .slice(0, Math.min(filter.limit ?? 500, behavior.maxLimit));
       for (const event of matched) {
         socket.write(encode(['EVENT', id, event]));
         if (behavior.duplicates) socket.write(encode(['EVENT', id, event]));
       }
       socket.write(encode(['EOSE', id]));
+      subscriptions.set(id as string, { socket, filter });
     }
+    if (frame[0] === 'CLOSE') subscriptions.delete(frame[1] as string);
     if (frame[0] === 'EVENT') {
       const event = frame[1] as Event;
       published.push(event);
       const accepts = behavior.publish !== 'reject' && !behavior.rejectKinds.includes(event.kind);
-      if (accepts && verifyEvent(event)) events.push(event);
+      if (accepts && verifyEvent(event)) deliver(event);
       if (behavior.publish !== 'silent') socket.write(encode(['OK', event.id, accepts, 'fixture']));
     }
   };
@@ -58,7 +69,11 @@ export async function relayFixture() {
     const accept = createHash('sha1').update(`${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
       .digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
+    sockets.add(socket);
+    socket.on('close', () => {
+      sockets.delete(socket);
+      for (const [id, subscription] of subscriptions) if (subscription.socket === socket) subscriptions.delete(id);
+    }); socket.on('error', () => {});
     let buffered: Buffer = Buffer.alloc(0);
     socket.on('data', (chunk: Buffer) => {
       buffered = Buffer.concat([buffered, chunk]);
@@ -82,7 +97,9 @@ export async function relayFixture() {
     });
   });
   const port = await listen(server);
-  return { url: `ws://127.0.0.1:${port}`, events, published, queries, behavior,
+  return { url: `ws://127.0.0.1:${port}`, events, published, queries, behavior, deliver, subscriptions,
+    /** Drop every connection, as a relay restart would. */
+    disconnect: () => { for (const socket of sockets) socket.destroy(); },
     close: async () => { for (const socket of sockets) socket.destroy(); await close(server); } };
 }
 

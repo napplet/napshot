@@ -46,9 +46,10 @@ redeploying pauses the worker while preserving data.
 Compose already sets `NAPSHOT_HOST=0.0.0.0`, `NAPSHOT_PORT=3080`,
 `NAPSHOT_DATA_DIR=/app/data`, and `NAPSHOT_CHROMIUM=/usr/bin/chromium`.
 Leave these container paths and port unchanged. Optional runtime values are
-`NAPSHOT_MIN_REPLICAS=2`, `NAPSHOT_POLL_MS=30000`,
-`NAPSHOT_LOOKBACK_SECONDS=86400`, and `NAPSHOT_TRUSTED_AUTHORS=` (additional
-comma-separated hex public keys). Two verified mirrors are always required.
+`NAPSHOT_MIN_REPLICAS=2`, `NAPSHOT_CONCURRENCY=3`, `NAPSHOT_BACKFILL_SINCE=0`
+(all history), `NAPSHOT_RESYNC_MS=900000`, and `NAPSHOT_TRUSTED_AUTHORS=` (additional
+comma-separated hex public keys). The homelab manifest sets `NAPSHOT_PREVIEW_IDENTITY`
+to the operator's public npub so identity napplets render signed in, read-only. Two verified mirrors are always required.
 
 The homelab manifest also manages the public `NAPSHOT_PROFILE` JSON value. It
 enables kind-0 and NIP-65 publication using the existing signer and relay list.
@@ -60,7 +61,7 @@ See [instance identity](instance-profile.md) before changing this metadata.
 
 After activation, `/api/status` must report your signer public
 key, configured endpoints, and a recent successful scan. `/healthz` becomes 200
-after a complete scan from any configured relay; `relayErrors` reports degraded
+once any configured relay is caught up and live; `relayErrors` reports degraded
 relays. Preview mode intentionally returns 503. The Compose
 healthcheck checks `/` for HTTP liveness, so a healthy container alone does not
 prove relay scans or captures are succeeding. Check Coolify logs and job counts

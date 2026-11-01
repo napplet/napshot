@@ -34,10 +34,13 @@ export class Store {
           status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0,
           png BLOB, servers TEXT NOT NULL DEFAULT '[]', label TEXT, error TEXT);
         CREATE TABLE IF NOT EXISTS cursors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS floors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS announcements (pubkey TEXT NOT NULL, kind INTEGER NOT NULL,
           state TEXT NOT NULL, PRIMARY KEY (pubkey,kind));
         CREATE INDEX IF NOT EXISTS due ON jobs(status,next_at);
       `);
+      // A previous owner stopped mid-job; persisted capture/replica/label progress lets it resume.
+      this.db.exec("UPDATE jobs SET status='pending' WHERE status='running'");
     } catch (error) { unlinkSync(this.lock); throw error; }
   }
   private claimLock(): void {
@@ -55,20 +58,40 @@ export class Store {
       throw new Error('Another worker owns this data directory');
     }
   }
-  enqueue(manifest: Manifest, skip: boolean): void {
-    this.db.prepare(`INSERT OR IGNORE INTO jobs (id,address,created_at,manifest,status)
+  /** Returns true when a new capturable job entered the queue. */
+  enqueue(manifest: Manifest, skip: boolean): boolean {
+    const inserted = this.db.prepare(`INSERT OR IGNORE INTO jobs (id,address,created_at,manifest,status)
       VALUES (?,?,?,?,?)`).run(manifest.event.id, manifest.address, manifest.event.created_at,
-      JSON.stringify(manifest), skip ? 'skipped' : 'pending');
+      JSON.stringify(manifest), skip ? 'skipped' : 'pending').changes > 0;
     // NIP-01 replacement ordering: newest timestamp, lowest id on ties.
     this.db.prepare(`UPDATE jobs SET status='superseded', png=NULL WHERE address=? AND status IN ('pending','failed')
       AND id != (SELECT id FROM jobs WHERE address=? ORDER BY created_at DESC,id ASC LIMIT 1)`)
       .run(manifest.address, manifest.address);
+    return inserted && !skip;
   }
   cursor(relay: string): number | undefined {
     return (this.db.prepare('SELECT timestamp FROM cursors WHERE relay=?').get(relay) as { timestamp: number } | undefined)?.timestamp;
   }
   checkpoint(relay: string, timestamp: number): void {
     this.db.prepare('INSERT OR REPLACE INTO cursors VALUES (?,?)').run(relay, timestamp);
+  }
+  /** Oldest timestamp a complete backfill has covered for this relay. */
+  floor(relay: string): number | undefined {
+    return (this.db.prepare('SELECT timestamp FROM floors WHERE relay=?').get(relay) as { timestamp: number } | undefined)?.timestamp;
+  }
+  setFloor(relay: string, timestamp: number): void {
+    this.db.prepare('INSERT OR REPLACE INTO floors VALUES (?,?)').run(relay, timestamp);
+  }
+  /** Atomically take the next due job so parallel processors never share one. */
+  claim(now = Date.now()): Job | undefined {
+    const job = this.next(now);
+    if (job) this.db.prepare("UPDATE jobs SET status='running' WHERE id=?").run(job.id);
+    return job;
+  }
+  /** Earliest retry time among waiting jobs, for sleeping exactly until work is due. */
+  nextDueAt(): number | undefined {
+    const row = this.db.prepare("SELECT min(next_at) AS at FROM jobs WHERE status IN ('pending','failed')").get() as { at: number | null };
+    return row.at ?? undefined;
   }
   next(now = Date.now()): Job | undefined {
     return this.db.prepare(`SELECT * FROM jobs WHERE status IN ('pending','failed') AND next_at<=?
@@ -91,7 +114,9 @@ export class Store {
   counts(): { pending: number; done: number; failed: number } {
     const counts = { pending: 0, done: 0, failed: 0 };
     for (const row of this.db.prepare('SELECT status,count(*) AS count FROM jobs GROUP BY status').all()) {
-      if (row.status === 'pending' || row.status === 'done' || row.status === 'failed') counts[row.status] = Number(row.count);
+      // In-flight work is still outstanding from the operator's point of view.
+      const status = row.status === 'running' ? 'pending' : row.status;
+      if (status === 'pending' || status === 'done' || status === 'failed') counts[status] += Number(row.count);
     }
     return counts;
   }
