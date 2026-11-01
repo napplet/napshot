@@ -69,6 +69,24 @@ export class Store {
       .run(manifest.address, manifest.address);
     return inserted && !skip;
   }
+  /**
+   * Return finished or skipped current revisions to the queue when `select` wants them recaptured.
+   * Progress from the earlier capture (PNG, replicas, label) is discarded; superseded revisions stay put.
+   */
+  requeue(select: (manifest: Manifest, label: Event | null) => boolean): number {
+    const rows = this.db.prepare(`SELECT id,manifest,label FROM jobs AS job WHERE status IN ('done','skipped')
+      AND id = (SELECT id FROM jobs WHERE address=job.address ORDER BY created_at DESC,id ASC LIMIT 1)`)
+      .all() as unknown as { id: string; manifest: string; label: string | null }[];
+    const reset = this.db.prepare(`UPDATE jobs SET status='pending',attempts=0,next_at=0,png=NULL,servers='[]',label=NULL,error=NULL
+      WHERE id=?`);
+    let count = 0;
+    for (const row of rows) {
+      const manifest = JSON.parse(row.manifest) as Manifest;
+      const label = row.label ? JSON.parse(row.label) as Event : null;
+      if (select(manifest, label)) count += Number(reset.run(row.id).changes);
+    }
+    return count;
+  }
   cursor(relay: string): number | undefined {
     return (this.db.prepare('SELECT timestamp FROM cursors WHERE relay=?').get(relay) as { timestamp: number } | undefined)?.timestamp;
   }

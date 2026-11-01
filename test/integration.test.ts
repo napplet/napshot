@@ -8,7 +8,7 @@ import { sha256 } from '../src/blossom.ts';
 import { capture } from '../src/capture.ts';
 import type { Config } from '../src/config.ts';
 import { Network } from '../src/network.ts';
-import { buildLabel, parseManifest } from '../src/protocol.ts';
+import { buildLabel, isPreviewIdentityLabel, parseManifest } from '../src/protocol.ts';
 import { Relays } from '../src/relay.ts';
 import { Store } from '../src/store.ts';
 import { Worker } from '../src/worker.ts';
@@ -355,6 +355,54 @@ Deno.test('single-file manifests render inline HTML, and identity napplets get t
     assert.equal(renders.find(render => render.html === html.toString())?.identity, undefined);
     const label = env.relay.published.find(event => event.tags.some(tag => tag[0] === 'e' && tag[1] === legacy.id))!;
     assert.match(label.content, /preview identity/);
+  } finally { store.close(); await env.close(); }
+});
+
+Deno.test('identity napplets previously captured signed out are recaptured with the preview account', async () => {
+  const env = await environment(); const store = new Store(env.directory);
+  env.config.previewIdentity = 'e771af0b05c8e95fcdf6feb3500544d2fb1ccd384788e9f490bb3ee28e8ed66f';
+  const shot = { hash: 'a'.repeat(64), size: 200, width: 320, height: 200, servers: env.config.blossomServers };
+  const signedOut = manifest({ kind: 35129, name: 'feed', tags: [['R', 'identity'], ['R', 'outbox']] });
+  const signedIn = manifest({ kind: 35129, name: 'profile', tags: [['R', 'identity']] });
+  const supplied = manifest({ kind: 35129, name: 'own', tags: [['R', 'identity'], ['screenshot', `x ${'b'.repeat(64)}`]] });
+  const anonymous = manifest({ kind: 35129, name: 'clock', tags: [['R', 'theme']] });
+  env.relay.events.push(signedOut, signedIn, supplied, anonymous,
+    buildLabel(parseManifest(signedOut)!, shot, env.config.key, env.relay.url),
+    buildLabel(parseManifest(signedIn)!, shot, env.config.key, env.relay.url, true),
+    buildLabel(parseManifest(anonymous)!, shot, env.config.key, env.relay.url));
+  const renders: { id: string; identity?: string }[] = [];
+  const worker = env.worker(store, (_bytes, options) => {
+    renders.push({ id: 'capture', identity: options.identity }); return Promise.resolve(smallPng);
+  });
+  try {
+    await worker.scan();
+    while (await worker.processOne()) { /* Drain. */ }
+    assert.deepEqual(renders, [{ id: 'capture', identity: env.config.previewIdentity }],
+      'only the signed-out identity napplet is captured again, now with the preview identity');
+    const labels = env.relay.published.filter(event => event.kind === 1985);
+    assert.equal(labels.length, 1);
+    assert.ok(labels[0].tags.some(tag => tag[0] === 'e' && tag[1] === signedOut.id));
+    assert.equal(isPreviewIdentityLabel(labels[0]), true);
+    assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
+
+    // A database from an older instance holds finished identity jobs with signed-out labels.
+    const stale = manifest({ kind: 35129, name: 'composer', tags: [['R', 'identity']] });
+    const fresh = manifest({ kind: 35129, name: 'notes', tags: [['O', 'identity']] });
+    store.enqueue(parseManifest(stale)!, false); store.enqueue(parseManifest(fresh)!, false);
+    store.label(stale.id, buildLabel(parseManifest(stale)!, shot, env.config.key, env.relay.url));
+    store.label(fresh.id, buildLabel(parseManifest(fresh)!, shot, env.config.key, env.relay.url, true));
+    store.finish(stale.id); store.finish(fresh.id);
+    assert.equal(worker.refreshIdentityCaptures(), 1, 'only the signed-out identity job is queued again');
+    assert.equal(store.next()?.id, stale.id);
+    assert.equal(store.next()?.label, null, 'the earlier label and replicas are discarded');
+    assert.equal(worker.refreshIdentityCaptures(), 0, 'pending work is not reset twice');
+    env.relay.events.push(stale);
+    while (await worker.processOne()) { /* Drain. */ }
+    assert.equal(renders.length, 2); assert.equal(renders[1].identity, env.config.previewIdentity);
+    assert.equal(env.relay.published.filter(event => isPreviewIdentityLabel(event)).length, 2);
+    assert.deepEqual(store.counts(), { pending: 0, done: 3, failed: 0 });
+    delete env.config.previewIdentity;
+    assert.equal(worker.refreshIdentityCaptures(), 0, 'without a preview identity nothing is recaptured');
   } finally { store.close(); await env.close(); }
 });
 
