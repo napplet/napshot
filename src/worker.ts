@@ -244,7 +244,8 @@ export class Worker {
     }
     const labels = await this.trustedLabels(manifest);
     // A label from a lesser capture (signed out, no relays) does not settle a napplet that now gets more.
-    const existing = labels.find(label => isCurrentCapture(label, manifest.event.tags, this.identityConfigured));
+    const existing = labels.find(label => label.created_at >= this.config.recaptureBefore
+      && isCurrentCapture(label, manifest.event.tags, this.identityConfigured));
     // Keep the settling label so a later refresh can see what that capture already had.
     if (existing) { this.store.label(job.id, existing); this.store.finish(job.id, 'skipped'); return; }
     const png = job.png ? Buffer.from(job.png) : await this.makeCapture(manifest);
