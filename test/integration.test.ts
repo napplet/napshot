@@ -411,6 +411,10 @@ Deno.test('napplets captured with fewer shell features are recaptured, and the o
     env.config.recaptureBefore = Math.floor(Date.now() / 1000) + 1;
     assert.equal(worker.refreshCaptures(), 6, 'an operator cut-off regenerates every finished preview, author media excepted');
     assert.equal(store.counts().pending, 6);
+    const before = renders.length;
+    env.relay.events.push(anonymous);
+    while (await worker.processOne()) { /* Drain. */ }
+    assert.equal(renders.length - before, 6, 'labels older than the cut-off never settle a job, even when they are on the relays');
   } finally { store.close(); await env.close(); }
 });
 
