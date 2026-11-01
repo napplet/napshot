@@ -14,7 +14,7 @@ export interface Config {
   concurrency: number;
   /** Optional read-only pubkey shown to napplets that require identity. */
   previewIdentity?: string;
-  capture: { executablePath?: string; width: number; height: number; delayMs: number; timeoutMs: number };
+  capture: { executablePath?: string; width: number; height: number; delayMs: number; idleMs: number; settleMs: number; timeoutMs: number };
   profile?: Record<string, unknown>;
 }
 function integer(env: Record<string, string | undefined>, name: string, fallback: number, min: number, max: number): number {
@@ -92,6 +92,8 @@ function captureConfig(env: Record<string, string | undefined>): Config['capture
     executablePath: env.NAPSHOT_CHROMIUM ?? '/usr/bin/chromium',
     width: integer(env, 'NAPSHOT_WIDTH', 1200, 200, 4096), height: integer(env, 'NAPSHOT_HEIGHT', 750, 160, 4096),
     delayMs: integer(env, 'NAPSHOT_CAPTURE_DELAY_MS', 1500, 0, 10000),
+    idleMs: integer(env, 'NAPSHOT_CAPTURE_IDLE_MS', 2000, 100, 30000),
+    settleMs: integer(env, 'NAPSHOT_CAPTURE_SETTLE_MS', 15000, 0, 60000),
     timeoutMs: integer(env, 'NAPSHOT_CAPTURE_TIMEOUT_MS', 45000, 1000, 120000),
   };
 }

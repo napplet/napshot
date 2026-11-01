@@ -44,13 +44,39 @@ export function requiresIdentity(tags: string[][]): boolean {
   return tags.some(t => (t[0] === 'R' || t[0] === 'O' || t[0] === 'requires') && t[1] === 'identity');
 }
 
+/** Napplets that declare relay or outbox NAPs are given live, read-only relay access during capture. */
+export function readsRelays(tags: string[][]): boolean {
+  return tags.some(t => (t[0] === 'R' || t[0] === 'O' || t[0] === 'requires') && (t[1] === 'relay' || t[1] === 'outbox'));
+}
+
+/** Shell features a capture enables for a napplet, recorded on its label as a `capture` tag. */
+export type CaptureFeature = 'identity' | 'relays';
+
+/**
+ * Features the current configuration would give this manifest. Identity flows read follows and
+ * profiles from relays, so a preview identity always comes with relay access.
+ */
+export function captureProfile(tags: string[][], identityConfigured: boolean): CaptureFeature[] {
+  const identity = identityConfigured && requiresIdentity(tags);
+  const features: CaptureFeature[] = [];
+  if (identity) features.push('identity');
+  if (identity || readsRelays(tags)) features.push('relays');
+  return features;
+}
+
+/** Features recorded on a label; labels from before the tag existed were offline, signed-out captures. */
+export function labelProfile(event: Event): string[] {
+  return event.tags.find(t => t[0] === 'capture')?.slice(1).filter(Boolean) ?? [];
+}
+
+/** A label settles a manifest when its capture had every feature the current configuration would give it. */
+export function isCurrentCapture(label: Event, tags: string[][], identityConfigured: boolean): boolean {
+  const recorded = labelProfile(label);
+  return captureProfile(tags, identityConfigured).every(feature => recorded.includes(feature));
+}
+
 export const SIGNED_OUT_CONTENT = 'Signed-out napplet preview captured by Napshot.';
 export const PREVIEW_IDENTITY_CONTENT = 'Napplet preview captured by Napshot with a read-only preview identity.';
-
-/** A label whose capture showed the napplet a preview account rather than a signed-out shell. */
-export function isPreviewIdentityLabel(event: Event): boolean {
-  return event.content === PREVIEW_IDENTITY_CONTENT;
-}
 
 function manifestName(event: Event): string | undefined {
   const names = event.tags.filter(t => t[0] === 'd');
@@ -86,14 +112,23 @@ export function isScreenshotLabel(event: Event, target: string, authors: string[
 }
 
 /** Sign an additive annotation; the author manifest is never modified. */
-export function buildLabel(manifest: Manifest, shot: Shot, key: Uint8Array, relay: string, signedIn = false): Event {
+export function buildLabel(manifest: Manifest, shot: Shot, key: Uint8Array, relay: string, profile: CaptureFeature[] = []): Event {
   return finalizeEvent({ kind: 1985, created_at: Math.floor(Date.now() / 1000),
-    content: signedIn ? PREVIEW_IDENTITY_CONTENT : SIGNED_OUT_CONTENT,
+    content: profile.includes('identity') ? PREVIEW_IDENTITY_CONTENT : SIGNED_OUT_CONTENT,
     tags: [
       ['L', '#screenshot'], ['l', shot.hash, '#screenshot'], ['e', manifest.event.id, relay],
       ['a', manifest.address], ['p', manifest.event.pubkey],
       ['screenshot', `x ${shot.hash}`, 'm image/png', `dim ${shot.width}x${shot.height}`, `size ${shot.size}`],
       ...shot.servers.map(server => ['server', server]),
+      ...(profile.length ? [['capture', ...profile]] : []),
     ],
+  }, key);
+}
+
+/** NIP-09 request to retract this instance's own earlier labels once a better capture replaces them. */
+export function buildRetraction(labelIds: string[], key: Uint8Array): Event {
+  return finalizeEvent({ kind: 5, created_at: Math.floor(Date.now() / 1000),
+    content: 'Superseded by a newer Napshot preview of the same napplet revision.',
+    tags: [...labelIds.map(id => ['e', id]), ['k', '1985']],
   }, key);
 }

@@ -6,8 +6,8 @@ import { capture } from './capture.ts';
 import type { Config } from './config.ts';
 import { Network } from './network.ts';
 import { deliverToAuthor } from './outbox.ts';
-import { buildLabel, hasScreenshot, isPreviewIdentityLabel, isScreenshotLabel, KINDS, parseManifest, requiresIdentity,
-  type Manifest } from './protocol.ts';
+import { buildLabel, buildRetraction, captureProfile, hasScreenshot, isCurrentCapture, isScreenshotLabel, KINDS,
+  parseManifest, type CaptureFeature, type Manifest } from './protocol.ts';
 import { Relays } from './relay.ts';
 import type { Store, Job } from './store.ts';
 
@@ -36,7 +36,7 @@ export class Worker {
 
   /** Run live ingestion, periodic safety resyncs and `concurrency` processors until aborted. */
   async run(signal: AbortSignal): Promise<void> {
-    this.refreshIdentityCaptures();
+    this.refreshCaptures();
     const tasks = [
       ...this.config.relays.map(relay => this.watch(relay, signal)),
       ...Array.from({ length: this.config.concurrency }, () => this.drain(signal)),
@@ -47,14 +47,15 @@ export class Worker {
   }
 
   /**
-   * Identity napplets captured signed out (before a preview identity was configured, or before their
-   * manifest shape was recognised) are queued again so shells get a signed-in preview.
+   * Napplets captured with fewer shell features than the current configuration grants (no preview
+   * identity, no relay reads) are queued again so shells get a preview with real data.
    */
-  refreshIdentityCaptures(): number {
-    if (!this.config.previewIdentity) return 0;
-    const requeued = this.store.requeue((manifest, label) =>
-      requiresIdentity(manifest.event.tags) && !hasScreenshot(manifest.event.tags) && !(label && isPreviewIdentityLabel(label)));
-    if (requeued) { this.log('info', 'identity_recapture_queued', { count: requeued }); this.wake(); }
+  refreshCaptures(): number {
+    const requeued = this.store.requeue((manifest, label) => {
+      const tags = manifest.event.tags;
+      return this.profileFor(manifest).length > 0 && !hasScreenshot(tags) && !(label && isCurrentCapture(label, tags, this.identityConfigured));
+    });
+    if (requeued) { this.log('info', 'recapture_queued', { count: requeued }); this.wake(); }
     return requeued;
   }
 
@@ -204,8 +205,8 @@ export class Worker {
     }
     return true;
   }
-  /** The trusted label that already settles this manifest, if any. */
-  private async existingLabel(manifest: Manifest): Promise<Event | undefined> {
+  /** Every trusted screenshot label for this manifest revision currently on the configured relays. */
+  private async trustedLabels(manifest: Manifest): Promise<Event[]> {
     const results = await Promise.allSettled(this.config.relays.map(relay => this.relays.query(relay, {
       kinds: [1985], '#e': [manifest.event.id], '#L': ['#screenshot'], authors: this.config.trustedAuthors, limit: 500,
     })));
@@ -217,10 +218,18 @@ export class Worker {
       return [];
     });
     if (!replies.length) throw new Error('No relay answered screenshot label lookup');
-    // A signed-out label does not settle a napplet that should be shown the preview identity.
-    const identity = Boolean(this.identityFor(manifest));
-    return replies.flat().find(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors)
-      && (!identity || isPreviewIdentityLabel(event)));
+    const seen = new Set<string>();
+    return replies.flat().filter(event => isScreenshotLabel(event, manifest.event.id, this.config.trustedAuthors)
+      && !seen.has(event.id) && seen.add(event.id));
+  }
+  /** Retract this instance's earlier labels for a revision it has just re-captured. Best effort. */
+  private async retract(labels: Event[], replacement: Event): Promise<void> {
+    const stale = labels.filter(label => label.pubkey === this.config.pubkey && label.id !== replacement.id).map(label => label.id);
+    if (!stale.length) return;
+    try {
+      await this.relays.publish(buildRetraction(stale, this.config.key));
+      this.log('info', 'labels_retracted', { id: replacement.id, retracted: stale });
+    } catch (error) { this.log('warn', 'label_retraction_failed', { id: replacement.id, error: message(error) }); }
   }
   private async process(job: Job): Promise<void> {
     const manifest: Manifest = JSON.parse(job.manifest);
@@ -230,18 +239,21 @@ export class Worker {
       this.store.finish(job.id);
       await this.notifyAuthor(label, manifest); return;
     }
-    const existing = await this.existingLabel(manifest);
-    // Keep the settling label so a later identity refresh can see the capture was already signed in.
+    const labels = await this.trustedLabels(manifest);
+    // A label from a lesser capture (signed out, no relays) does not settle a napplet that now gets more.
+    const existing = labels.find(label => isCurrentCapture(label, manifest.event.tags, this.identityConfigured));
+    // Keep the settling label so a later refresh can see what that capture already had.
     if (existing) { this.store.label(job.id, existing); this.store.finish(job.id, 'skipped'); return; }
     const png = job.png ? Buffer.from(job.png) : await this.makeCapture(manifest);
     const dimensions = pngDimensions(png);
     if (!job.png) this.store.capture(job.id, png);
     const active = await this.uploadReplicas(job, png);
     const label = buildLabel(manifest, { hash: sha256(png), size: png.length,
-      ...dimensions, servers: active }, this.config.key, this.config.relays[0], !!this.identityFor(manifest));
+      ...dimensions, servers: active }, this.config.key, this.config.relays[0], this.profileFor(manifest));
     this.store.label(job.id, label);
     await this.relays.publish(label);
     this.store.finish(job.id);
+    await this.retract(labels, label);
     await this.notifyAuthor(label, manifest);
   }
   /** Best effort after the job is durably finished; failures here never retry or fail the job. */
@@ -261,16 +273,20 @@ export class Worker {
     if (active.length < this.config.minReplicas) throw new Error(`Only ${active.length}/${this.config.minReplicas} verified replicas`);
     return active;
   }
-  private identityFor(manifest: Manifest): string | undefined {
-    // Derive from the signed tags rather than the stored flag, so jobs queued under an older rule follow the current one.
-    return requiresIdentity(manifest.event.tags) ? this.config.previewIdentity : undefined;
+  private get identityConfigured(): boolean { return Boolean(this.config.previewIdentity); }
+  /** Derived from the signed tags rather than a stored flag, so jobs queued under an older rule follow the current one. */
+  private profileFor(manifest: Manifest): CaptureFeature[] {
+    return captureProfile(manifest.event.tags, this.identityConfigured);
   }
   private async makeCapture(manifest: Manifest): Promise<Buffer> {
     // Legacy single-file manifests often inline the exact artifact; use it when the hash proves it.
     const inline = Buffer.from(manifest.event.content, 'utf8');
     const html = inline.length && sha256(inline) === manifest.hash
       ? inline : await fetchArtifact(manifest, this.config.blossomServers, this.network);
-    return (this.dependencies.capture ?? capture)(html, { ...this.config.capture, identity: this.identityFor(manifest) });
+    const profile = this.profileFor(manifest);
+    return (this.dependencies.capture ?? capture)(html, { ...this.config.capture,
+      identity: profile.includes('identity') ? this.config.previewIdentity : undefined,
+      relays: profile.includes('relays') ? this.config.relays : [] });
   }
 }
 function message(error: unknown): string { return error instanceof Error ? error.message : 'Operation failed'; }

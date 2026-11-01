@@ -1,9 +1,12 @@
 import { Buffer } from 'node:buffer';
 /** Adapted from napplet's MIT-licensed Paja screenshot runner; see THIRD_PARTY_NOTICES.md. */
+import { lookup } from 'node:dns/promises';
 import { createServer, get, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { connect, isIP, type AddressInfo, type Socket } from 'node:net';
+import type { Duplex } from 'node:stream';
 import { startPajaServer } from '@kehto/paja';
 import { chromium, type Browser, type Page } from 'playwright';
+import { isPublicAddress } from './network.ts';
 
 const PREVIEW_PATHS = new Set(['/', '/__kehto/config.json', '/__kehto/browser-host.js',
   '/__kehto/target.html', '/__kehto/target-cors.json']);
@@ -12,21 +15,49 @@ export interface CaptureOptions {
   executablePath?: string;
   width: number;
   height: number;
+  /** Minimum time the napplet runs before any screenshot. */
   delayMs: number;
+  /** Quiet period on the shell bus (no messages reaching the napplet) that counts as settled. */
+  idleMs: number;
+  /** Upper bound on waiting for the bus to settle, after `delayMs`. */
+  settleMs: number;
   timeoutMs: number;
   /** Read-only public key presented to napplets that ask for identity; no signer is exposed. */
   identity?: string;
+  /** Relays the shell may read from on the napplet's behalf; nothing else leaves the sandbox. */
+  relays?: string[];
 }
 
-/** Render verified HTML in a fresh, anonymous Paja shell and return only its iframe PNG. */
+/**
+ * Observes shell traffic from inside the napplet so the screenshot waits for data, not a stopwatch.
+ * Window messages and transferred MessagePorts are the only channels across the Kehto boundary.
+ */
+const BUS_PROBE = `<script>(() => {
+  const bus = { count: 0, last: performance.now() };
+  const bump = () => { bus.count++; bus.last = performance.now(); };
+  addEventListener('message', bump, true);
+  const port = MessagePort.prototype;
+  const onmessage = Object.getOwnPropertyDescriptor(port, 'onmessage');
+  if (onmessage?.set) Object.defineProperty(port, 'onmessage', { ...onmessage,
+    set(handler) { onmessage.set.call(this, handler); this.addEventListener('message', bump); } });
+  const add = port.addEventListener;
+  port.addEventListener = function (type, ...rest) {
+    if (type === 'message') add.call(this, 'message', bump);
+    return add.call(this, type, ...rest);
+  };
+  Object.defineProperty(globalThis, '__napshotBus', { value: bus });
+})()</script>`;
+
+/** Render verified HTML in a fresh Paja shell and return only its iframe PNG. */
 export async function capture(html: Buffer, options: CaptureOptions): Promise<Buffer> {
   validateOptions(options);
+  const relays = (options.relays ?? []).map(relayOrigin);
   // Paja's development iframe allows network by default. Apply policy before any artifact bytes.
   const policy = ["default-src 'none'", "script-src 'unsafe-inline' 'wasm-unsafe-eval' blob:",
     "style-src 'unsafe-inline'", 'img-src data: blob:', 'font-src data:', 'media-src data: blob:',
     "connect-src 'none'", "frame-src 'none'", "worker-src 'none'", "base-uri 'none'", "form-action 'none'"];
   const isolatedHtml = Buffer.concat([
-    Buffer.from(`<meta http-equiv="Content-Security-Policy" content="${policy.join('; ')}">`), html,
+    Buffer.from(`<meta http-equiv="Content-Security-Policy" content="${policy.join('; ')}">${BUS_PROBE}`), html,
   ]);
   const target = createServer((request, response) => {
     if (request.method !== 'GET' || request.url !== '/') {
@@ -50,14 +81,15 @@ export async function capture(html: Buffer, options: CaptureOptions): Promise<Bu
       host: '127.0.0.1', port: 0, targetUrl,
       simulation: {
         identity: options.identity ? { mode: 'fixed', pubkey: options.identity } : { mode: 'anonymous' },
-        relay: { mode: 'memory' }, storage: { mode: 'memory' },
+        // Paja advertises relay and outbox only in live mode; memory mode leaves data-driven napplets empty.
+        relay: relays.length ? { mode: 'live', urls: options.relays } : { mode: 'memory' }, storage: { mode: 'memory' },
         upload: { mode: 'disabled' }, media: { enabled: false }, notifications: { enabled: false },
         intent: { enabled: false }, cvm: { enabled: false },
       },
     } });
     if (ended) { await started.close(); expired(); }
     preview = started;
-    proxy = createPreviewProxy(new URL(preview.url).origin);
+    proxy = createPreviewProxy(new URL(preview.url).origin, relays);
     await listen(proxy);
     expired();
     const launched = await chromium.launch({
@@ -68,7 +100,7 @@ export async function capture(html: Buffer, options: CaptureOptions): Promise<Bu
     });
     if (ended) { await launched.close(); expired(); }
     browser = launched;
-    return renderFrame(browser, preview.url, options);
+    return renderFrame(browser, preview.url, options, relays);
   };
   try {
     return await Promise.race([
@@ -88,7 +120,7 @@ export async function capture(html: Buffer, options: CaptureOptions): Promise<Bu
   }
 }
 
-async function renderFrame(browser: Browser, url: string, options: CaptureOptions): Promise<Buffer> {
+async function renderFrame(browser: Browser, url: string, options: CaptureOptions, relays: string[]): Promise<Buffer> {
   const context = await browser.newContext({
     viewport: { width: options.width, height: options.height },
     serviceWorkers: 'block', acceptDownloads: false, permissions: [],
@@ -102,7 +134,10 @@ async function renderFrame(browser: Browser, url: string, options: CaptureOption
       && !target.search && request.frame() === page.mainFrame();
     return safe ? route.continue() : route.abort('blockedbyclient');
   });
-  await context.routeWebSocket('**/*', (socket) => socket.close());
+  // The napplet frame cannot open sockets (connect-src 'none'); only the shell reaches the listed relays.
+  await context.routeWebSocket('**/*', (socket) => {
+    if (relays.includes(relayOrigin(socket.url()))) socket.connectToServer(); else socket.close();
+  });
   context.on('page', (popup) => { void popup.close(); });
   page.on('dialog', (dialog) => { void dialog.dismiss(); });
   page.setDefaultTimeout(options.timeoutMs);
@@ -124,13 +159,38 @@ async function screenshotFrame(page: Page, options: CaptureOptions): Promise<Buf
   await content.locator('body').waitFor({ state: 'visible' });
   await content.locator('body').evaluate(async () => { await document.fonts.ready; });
   await page.waitForTimeout(options.delayMs);
+  await settle(page, options);
   const location = await content.locator('body').evaluate(() => globalThis.location.href);
   if (location !== 'about:srcdoc') throw new Error('Napplet navigated away during capture');
   return frame.screenshot({ type: 'png', timeout: options.timeoutMs });
 }
 
-/** Chromium must proxy even loopback requests; only the fixed local Paja endpoints are forwarded. */
-function createPreviewProxy(origin: string): Server {
+/** Wait until shell traffic into the napplet has been quiet for `idleMs`, or `settleMs` has elapsed. */
+async function settle(page: Page, options: CaptureOptions): Promise<void> {
+  const deadline = Date.now() + options.settleMs;
+  const body = page.locator('#napplet-frame').contentFrame().locator('body');
+  while (Date.now() < deadline) {
+    const quiet = await body.evaluate(() => {
+      const bus = (globalThis as { __napshotBus?: { last: number } }).__napshotBus;
+      return bus ? performance.now() - bus.last : Infinity;
+    });
+    if (quiet >= options.idleMs) return;
+    await page.waitForTimeout(Math.min(250, Math.max(50, options.idleMs - quiet)));
+  }
+}
+
+/** Canonical `scheme://host:port` for relay allow-listing. */
+function relayOrigin(input: string): string {
+  const url = new URL(input);
+  const port = url.port || (url.protocol === 'wss:' || url.protocol === 'https:' ? '443' : '80');
+  return `${url.protocol}//${url.hostname}:${port}`;
+}
+
+/**
+ * Chromium must proxy even loopback requests; only the fixed local Paja endpoints are forwarded,
+ * plus WebSocket connections to the allow-listed relays (CONNECT for wss, upgrade for ws).
+ */
+function createPreviewProxy(origin: string, relays: string[]): Server {
   const server = createServer((request, response) => {
     let url: URL;
     try { url = new URL(request.url ?? ''); } catch { response.writeHead(403).end(); return; }
@@ -146,10 +206,53 @@ function createPreviewProxy(origin: string): Server {
     upstream.on('error', () => { if (!response.headersSent) response.writeHead(502); response.end(); });
     response.on('close', () => upstream.destroy());
   });
-  server.on('connect', (_request, socket) => socket.destroy());
+  // Browsers tunnel every WebSocket, ws:// included, through CONNECT.
+  server.on('connect', (request, socket, head) => {
+    const target = relayTarget(request.url ?? '', relays);
+    if (!target) { socket.destroy(); return; }
+    void tunnel(socket, head, target);
+  });
   server.on('upgrade', (_request, socket) => socket.destroy());
   return server;
 }
+
+interface RelayTarget { hostname: string; port: number; plain: boolean }
+
+/** The allow-listed relay a CONNECT `host:port` names, or undefined when it is not permitted. */
+function relayTarget(destination: string, relays: string[]): RelayTarget | undefined {
+  for (const relay of relays) {
+    const url = new URL(relay);
+    const port = Number(relay.split(':').pop());
+    const host = url.hostname.includes(':') ? `[${url.hostname}]` : url.hostname;
+    if (destination === `${host}:${port}`) return { hostname: url.hostname, port, plain: url.protocol === 'ws:' };
+  }
+}
+
+const LOOPBACK = new Map([['127.0.0.1', '127.0.0.1'], ['::1', '::1'], ['localhost', '127.0.0.1']]);
+
+/** Resolve a relay host once and refuse private destinations, except loopback for `ws://` test relays. */
+async function relayAddress(target: RelayTarget): Promise<string> {
+  const host = target.hostname.replace(/^\[|\]$/g, '');
+  const loopback = target.plain ? LOOPBACK.get(host) : undefined;
+  if (loopback) return loopback;
+  const addresses = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
+  if (!addresses.length || addresses.some(entry => !isPublicAddress(entry.address))) throw new Error('Non-public relay rejected');
+  return addresses[0].address;
+}
+
+async function tunnel(client: Duplex, head: Buffer, target: RelayTarget): Promise<void> {
+  let upstream: Socket | undefined;
+  try {
+    const address = await relayAddress(target);
+    upstream = connect({ host: address, port: target.port });
+    await new Promise<void>((resolve, reject) => { upstream!.once('connect', resolve); upstream!.once('error', reject); });
+    client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    if (head.length) upstream.write(head);
+    upstream.pipe(client); client.pipe(upstream);
+    upstream.on('error', () => client.destroy()); client.on('error', () => upstream?.destroy());
+  } catch { upstream?.destroy(); client.destroy(); }
+}
+
 
 function listen(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -165,10 +268,22 @@ function close(server: Server): Promise<void> {
 }
 
 function validateOptions(options: CaptureOptions): void {
-  const bounds = { width: [1, 4096], height: [1, 4096], delayMs: [0, 30_000], timeoutMs: [1, 120_000] };
+  const bounds = { width: [1, 4096], height: [1, 4096], delayMs: [0, 30_000], idleMs: [50, 30_000],
+    settleMs: [0, 120_000], timeoutMs: [1, 120_000] };
   for (const [name, [min, max]] of Object.entries(bounds)) {
-    const value = options[name as keyof typeof bounds];
-    if (!Number.isInteger(value) || value < min || value > max) throw new Error(`Invalid capture ${name}`);
+    if (!inRange(options[name as keyof typeof bounds], min, max)) throw new Error(`Invalid capture ${name}`);
   }
   if (options.identity !== undefined && !/^[0-9a-f]{64}$/.test(options.identity)) throw new Error('Invalid capture identity');
+  if (!(options.relays ?? []).every(isRelayUrl)) throw new Error('Invalid capture relay');
+}
+
+function inRange(value: number, min: number, max: number): boolean {
+  return Number.isInteger(value) && value >= min && value <= max;
+}
+
+function isRelayUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'ws:' || url.protocol === 'wss:') && !url.username && !url.password;
+  } catch { return false; }
 }

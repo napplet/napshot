@@ -12,7 +12,7 @@
 </div>
 
 Napshot watches root (`15129`) and named (`35129`) napplet manifests for missing screenshots.
-It renders verified HTML in a fresh, offline Paja shell, mirrors the PNG to at least two
+It renders verified HTML in a fresh, sandboxed Paja shell, mirrors the PNG to at least two
 Blossom servers, and publishes a signed NIP-32 label referencing the exact manifest event.
 Shells discover these previews through Nostr without changing the author’s manifest.
 
@@ -21,11 +21,13 @@ Shells discover these previews through Nostr without changing the author’s man
 - **Verifiable delivery.** Uploaded bytes are read back and checked before their servers appear in the label.
 - **One process.** The worker also serves a live capture viewer, public status, and a health endpoint.
 
-Captures show the initial **offline view**. Napplets that declare the `identity` NAP (a required `R`,
-optional `O`, or legacy `requires` tag) are shown a configured read-only preview account
-(`NAPSHOT_PREVIEW_IDENTITY`); all others are signed out. Once a preview identity is configured, identity
-napplets whose only preview was captured signed out are queued again and relabeled.
-Apps that need network data or interaction may show an empty or loading state. Snapshots (`5129`) are excluded.
+Captures show the napplet's **first view with real data**. Napplets that declare the `identity` NAP
+(a required `R`, optional `O`, or legacy `requires` tag) are shown a configured read-only preview
+account (`NAPSHOT_PREVIEW_IDENTITY`); all others are signed out. Napplets that declare `relay`,
+`outbox` or `identity` get read-only access to the configured relays through the shell, and the
+screenshot waits until shell traffic into the napplet has gone quiet. Each label records the shell
+features its capture had in a `capture` tag; when the configuration grants more, the napplet is queued
+again and the superseded label is retracted with a NIP-09 deletion request. Snapshots (`5129`) are excluded.
 
 ## Quick start
 
@@ -143,7 +145,9 @@ publication waits until the configured minimum is met.
 | `NAPSHOT_RESYNC_MS` | Safety-net catch-up interval behind the live relay subscriptions, default `900000` |
 | `NAPSHOT_PREVIEW_IDENTITY` | Optional `npub` or hex public key shown read-only to napplets that declare the `identity` NAP (`R`, `O`, or `requires`); no signer is exposed |
 | `NAPSHOT_WIDTH`, `NAPSHOT_HEIGHT` | Capture dimensions, default `1200` × `750` |
-| `NAPSHOT_CAPTURE_DELAY_MS` | Settle time after loading, default `1500` |
+| `NAPSHOT_CAPTURE_DELAY_MS` | Minimum time the napplet runs before any screenshot, default `1500` |
+| `NAPSHOT_CAPTURE_IDLE_MS` | Quiet period on the shell bus that counts as settled, default `2000` |
+| `NAPSHOT_CAPTURE_SETTLE_MS` | Upper bound on waiting for the bus to settle, default `15000` |
 | `NAPSHOT_CAPTURE_TIMEOUT_MS` | Overall browser capture limit, default `45000` |
 
 Use servers that accept uploads from the configured signer. Napshot handles BUD-11
@@ -259,15 +263,16 @@ responses, disable buffering for `/api/stream`.
 <summary><strong>Capture isolation and limits</strong></summary>
 
 Napshot adapts the napplet CLI’s Paja/Playwright iframe capture flow; see
-[third-party notices](THIRD_PARTY_NOTICES.md). A fresh anonymous browser
-context has no account or signing keys. Network requests are restricted to the disposable
-local preview; external requests, websocket connections, downloads and service workers
-are blocked. Fetching signed artifacts uses bounded responses, pinned public DNS and
+[third-party notices](THIRD_PARTY_NOTICES.md). A fresh browser context has no signing
+keys; a preview identity is a bare public key. The napplet frame itself cannot make any
+network request. The Paja shell may open WebSockets only to the configured relays, and only
+for napplets that declare relay, outbox or identity NAPs; the proxy resolves those hosts to
+public addresses and refuses everything else. All other requests, downloads and service
+workers are blocked. Fetching signed artifacts uses bounded responses, pinned public DNS and
 SHA-256 verification, preventing manifest hints from reaching local services.
 
-A screenshot is a signed-out preview, not a correctness or safety endorsement. Applets
-that require live network data, authentication, interaction or more time may show a
-loading or empty state. Browser failures remain retryable jobs. Run an internet-facing
+A screenshot is a read-only preview, not a correctness or safety endorsement. Applets
+that require interaction, uploads or more time may show a loading or empty state. Browser failures remain retryable jobs. Run an internet-facing
 renderer as a dedicated unprivileged user/container with OS memory/CPU limits; Chromium's
 sandbox and request interception are not a replacement for host isolation against browser exploits.
 

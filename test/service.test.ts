@@ -92,7 +92,7 @@ Deno.test('Deno renders a real napplet while Node, npm and pnpm executables are 
   const browser = Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium';
   const source = `import {Buffer} from 'node:buffer'; import {capture} from ${JSON.stringify(moduleUrl)};
     const png=await capture(Buffer.from('<body style="background:green">Deno only</body>'), {
-      executablePath:${JSON.stringify(browser)},width:320,height:200,delayMs:100,timeoutMs:15000});
+      executablePath:${JSON.stringify(browser)},width:320,height:200,delayMs:100,idleMs:300,settleMs:2000,timeoutMs:15000});
     console.log(JSON.stringify({signature:png.subarray(1,4).toString(),width:png.readUInt32BE(16),height:png.readUInt32BE(20)}));`;
   try {
     const result = await new Deno.Command(Deno.execPath(), {
