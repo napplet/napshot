@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
-import { parseManifest, hasScreenshot, buildLabel, isScreenshotLabel } from '../src/protocol.ts';
+import { buildLabel, buildRetraction, captureProfile, hasScreenshot, isCurrentCapture, isScreenshotLabel, labelProfile,
+  parseManifest } from '../src/protocol.ts';
 
 const key = generateSecretKey();
 const hash = 'a'.repeat(64);
@@ -36,6 +37,27 @@ Deno.test('labels carry exact revision, screenshot bytes metadata and NIP-32 nam
   assert.equal(isScreenshotLabel(label, event.id, [getPublicKey(key)]), true);
   assert.equal(isScreenshotLabel(label, 'b'.repeat(64), [getPublicKey(key)]), false);
   assert.equal(isScreenshotLabel(label, event.id, []), false);
+});
+
+Deno.test('capture profiles follow declared NAPs and decide which labels still settle a revision', () => {
+  const event = manifest(35129, [['d', 'feed'], ['R', 'identity'], ['R', 'outbox']]);
+  const parsed = parseManifest(event)!;
+  assert.deepEqual(captureProfile(event.tags, true), ['identity', 'relays']);
+  assert.deepEqual(captureProfile(event.tags, false), ['relays'], 'relay readers get relays even without a preview identity');
+  assert.deepEqual(captureProfile([['R', 'identity']], true), ['identity', 'relays'], 'identity flows need relays');
+  assert.deepEqual(captureProfile([['O', 'theme']], true), []);
+  const shot = { hash, size: 300, width: 1200, height: 750, servers: ['https://a.test'] };
+  const offline = buildLabel(parsed, shot, key, 'wss://relay.test');
+  const full = buildLabel(parsed, shot, key, 'wss://relay.test', ['identity', 'relays']);
+  assert.deepEqual(labelProfile(offline), []); assert.deepEqual(labelProfile(full), ['identity', 'relays']);
+  assert.match(full.content, /preview identity/); assert.match(offline.content, /Signed-out/);
+  assert.equal(isCurrentCapture(offline, event.tags, true), false);
+  assert.equal(isCurrentCapture(full, event.tags, true), true);
+  assert.equal(isCurrentCapture(full, event.tags, false), true, 'a richer capture is never stale');
+  assert.equal(isCurrentCapture(offline, [['O', 'theme']], true), true, 'plain napplets keep their offline preview');
+  const retraction = buildRetraction([offline.id, full.id], key);
+  assert.equal(retraction.kind, 5);
+  assert.deepEqual(retraction.tags, [['e', offline.id], ['e', full.id], ['k', '1985']]);
 });
 
 Deno.test('malformed media cannot suppress captures through another valid screenshot tag', () => {

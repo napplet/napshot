@@ -2,12 +2,14 @@ import { Buffer } from 'node:buffer';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { finalizeEvent, generateSecretKey } from 'nostr-tools';
 import { chromium } from 'playwright';
 import { capture } from '../src/capture.ts';
+import { relayFixture } from './fixtures.ts';
 
 const options = {
   executablePath: Deno.env.get('CHROMIUM_PATH') ?? '/usr/bin/chromium',
-  width: 320, height: 200, delayMs: 200, timeoutMs: 15_000,
+  width: 320, height: 200, delayMs: 200, idleMs: 300, settleMs: 2000, timeoutMs: 15_000,
 };
 
 Deno.test('capture renders through the real Paja shim and crops to the napplet', async () => {
@@ -62,6 +64,45 @@ Deno.test('a configured preview identity is visible to the napplet as a read-onl
   assert.deepEqual(await center(await capture(html, { ...options, identity: pubkey })), [20, 180, 80, 255]);
   assert.notDeepEqual(await center(await capture(html, options)), [20, 180, 80, 255], 'anonymous by default');
   await assert.rejects(capture(html, { ...options, identity: 'npub1nothex' }), /Invalid capture identity/);
+});
+
+Deno.test('the shell reads only the listed relays, and the screenshot waits for the bus to go quiet', async () => {
+  const listed = await relayFixture(); const unlisted = await relayFixture();
+  const note = finalizeEvent({ kind: 1, created_at: 1700000000, content: 'hello', tags: [] }, generateSecretKey());
+  listed.events.push(note);
+  const html = Buffer.from(`<!doctype html><html><body style="margin:0;min-height:100vh;background:rgb(220,10,10)">
+    <script>
+      (async () => {
+        // Several round trips, each slower than the idle window alone, must all finish before the shot.
+        for (let round = 0; round < 3; round++) {
+          await window.napplet.identity.getPublicKey().catch(() => '');
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        document.body.style.background = 'rgb(10,10,220)';
+        window.napplet.relay.subscribe({ kinds: [1] }, () => { document.body.style.background = 'rgb(20,180,80)'; });
+      })();
+    </script></body></html>`);
+  const center = async (png: Buffer) => {
+    const browser = await chromium.launch({ executablePath: options.executablePath, chromiumSandbox: true });
+    try {
+      const page = await browser.newPage();
+      return await page.evaluate(async (encoded) => {
+        const image = new Image(); image.src = `data:image/png;base64,${encoded}`; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+        return Array.from(context.getImageData(160, 100, 1, 1).data);
+      }, png.toString('base64'));
+    } finally { await browser.close(); }
+  };
+  try {
+    const shot = await capture(html, { ...options, delayMs: 100, idleMs: 400, settleMs: 6000,
+      identity: note.pubkey, relays: [listed.url] });
+    assert.ok(listed.queries.length > 0, 'the shell queried the listed relay');
+    assert.deepEqual(await center(shot), [20, 180, 80, 255], 'relay data reached the napplet before the screenshot');
+    assert.equal(unlisted.queries.length, 0);
+    const hasty = await capture(html, { ...options, delayMs: 100, idleMs: 400, settleMs: 0, identity: note.pubkey, relays: [listed.url] });
+    assert.deepEqual(await center(hasty), [220, 10, 10, 255], 'without settling the napplet is still working');
+  } finally { await listed.close(); await unlisted.close(); }
 });
 
 Deno.test('capture blocks HTTP and WebSocket egress from a hostile artifact', async () => {

@@ -17,10 +17,18 @@ fields as current NIP-5D manifest presentation media.
     ["p", "<manifest-author>"],
     ["screenshot", "x <png-sha256>", "m image/png", "dim 1200x750", "size <bytes>"],
     ["server", "https://blossom-one.example"],
-    ["server", "https://blossom-two.example"]
+    ["server", "https://blossom-two.example"],
+    ["capture", "identity", "relays"]
   ]
 }
 ```
+
+The optional `capture` tag lists the shell features the capture had: `identity` (a read-only
+preview account) and `relays` (live reads from the instance's relays). Labels without it
+were offline, signed-out captures. When an instance later captures the same revision with more
+features, it publishes a new label and a NIP-09 kind `5` deletion request listing the superseded
+label IDs (with a `k` tag of `1985`). Shells should drop retracted labels from the instance's own
+signer and otherwise prefer the newest trusted label.
 
 The normal Nostr `id`, `sig`, `pubkey`, and `created_at` fields are added when signing.
 For a root manifest the address is `15129:<author>:` with a trailing colon. Named
@@ -61,7 +69,6 @@ capture code can evolve; this service handles `15129`/`35129` manifests with exa
 artifact (a bare `x` hash, or a legacy `f`/`path` map containing only `index.html`), not
 multi-file sites. When a napplet declares the `identity` NAP (an `R`, `O`, or legacy `requires`
 tag) and the operator configured a preview identity, the label content reads
-`Napplet preview captured by Napshot with a read-only preview identity.` For such a napplet only a
-label with that content settles the revision; a signed-out label is superseded by a new signed-in
-capture and label, and shells should prefer the newest trusted label. Source:
+`Napplet preview captured by Napshot with a read-only preview identity.` and the `capture` tag
+includes `identity`. Source:
 [napplet CLI](https://github.com/napplet/napplet/tree/master/packages/cli).
