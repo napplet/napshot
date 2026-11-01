@@ -48,12 +48,15 @@ export class Worker {
 
   /**
    * Napplets captured with fewer shell features than the current configuration grants (no preview
-   * identity, no relay reads) are queued again so shells get a preview with real data.
+   * identity, no relay reads), or labeled before `recaptureBefore`, are queued again so shells get
+   * a preview with real data from the current renderer.
    */
   refreshCaptures(): number {
     const requeued = this.store.requeue((manifest, label) => {
       const tags = manifest.event.tags;
-      return this.profileFor(manifest).length > 0 && !hasScreenshot(tags) && !(label && isCurrentCapture(label, tags, this.identityConfigured));
+      if (hasScreenshot(tags)) return false;
+      if (label && label.created_at < this.config.recaptureBefore) return true;
+      return this.profileFor(manifest).length > 0 && !(label && isCurrentCapture(label, tags, this.identityConfigured));
     });
     if (requeued) { this.log('info', 'recapture_queued', { count: requeued }); this.wake(); }
     return requeued;

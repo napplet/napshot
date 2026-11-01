@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && groupadd --gid 1000 napshot \
     && useradd --uid 1000 --gid napshot --create-home napshot
 COPY --from=deno /deno /usr/local/bin/deno
+COPY deploy/fonts.conf /etc/fonts/local.conf
 ENV DENO_DIR=/opt/deno-cache \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     NAPSHOT_HOST=0.0.0.0 \

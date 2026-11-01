@@ -45,6 +45,8 @@ export class Store {
       `);
       // A previous owner stopped mid-job; persisted capture/replica/label progress lets it resume.
       this.db.exec("UPDATE jobs SET status='pending' WHERE status='running'");
+      // A restart usually means a fix or a new build: give failed jobs one prompt retry before backoff resumes.
+      this.db.exec("UPDATE jobs SET next_at=0 WHERE status='failed'");
     } catch (error) { unlinkSync(this.lock); throw error; }
   }
   private claimLock(): void {

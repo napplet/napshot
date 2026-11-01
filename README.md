@@ -148,6 +148,7 @@ publication waits until the configured minimum is met.
 | `NAPSHOT_CAPTURE_DELAY_MS` | Minimum time the napplet runs before any screenshot, default `1500` |
 | `NAPSHOT_CAPTURE_IDLE_MS` | Quiet period on the shell bus that counts as settled, default `2000` |
 | `NAPSHOT_CAPTURE_SETTLE_MS` | Upper bound on waiting for the bus to settle, default `15000` |
+| `NAPSHOT_RECAPTURE_BEFORE` | Unix time; on startup, previews labeled before it are captured again and the old labels retracted (use after renderer, font or shell upgrades), default `0` |
 | `NAPSHOT_CAPTURE_TIMEOUT_MS` | Overall browser capture limit, default `60000` |
 
 Use servers that accept uploads from the configured signer. Napshot handles BUD-11

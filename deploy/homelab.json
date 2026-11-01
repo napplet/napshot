@@ -42,6 +42,15 @@
       "is_buildtime": false,
       "is_runtime": true,
       "is_shown_once": false
+    },
+    {
+      "key": "NAPSHOT_RECAPTURE_BEFORE",
+      "value": "1793541327",
+      "is_literal": true,
+      "is_preview": false,
+      "is_buildtime": false,
+      "is_runtime": true,
+      "is_shown_once": false
     }
   ]
 }
