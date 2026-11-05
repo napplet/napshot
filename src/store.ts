@@ -38,6 +38,7 @@ export class Store {
           status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0,
           png BLOB, servers TEXT NOT NULL DEFAULT '[]', label TEXT, error TEXT);
         CREATE TABLE IF NOT EXISTS cursors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS scan_cursors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS floors (relay TEXT PRIMARY KEY, timestamp INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS announcements (pubkey TEXT NOT NULL, kind INTEGER NOT NULL,
           state TEXT NOT NULL, PRIMARY KEY (pubkey,kind));
@@ -91,11 +92,12 @@ export class Store {
     }
     return count;
   }
+  /** Only completed finite scans may advance this watermark; legacy heartbeat cursors are not trusted. */
   cursor(relay: string): number | undefined {
-    return (this.db.prepare('SELECT timestamp FROM cursors WHERE relay=?').get(relay) as { timestamp: number } | undefined)?.timestamp;
+    return (this.db.prepare('SELECT timestamp FROM scan_cursors WHERE relay=?').get(relay) as { timestamp: number } | undefined)?.timestamp;
   }
   checkpoint(relay: string, timestamp: number): void {
-    this.db.prepare('INSERT OR REPLACE INTO cursors VALUES (?,?)').run(relay, timestamp);
+    this.db.prepare('INSERT OR REPLACE INTO scan_cursors VALUES (?,?)').run(relay, timestamp);
   }
   /** Oldest timestamp a complete backfill has covered for this relay. */
   floor(relay: string): number | undefined {

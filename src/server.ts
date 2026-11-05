@@ -39,7 +39,8 @@ function json(response: ServerResponse, code: number, body: unknown): void {
 }
 
 function sendStatus(path: string, response: ServerResponse, worker?: Worker): void {
-  const healthy = !!worker?.lastScan && Date.now() / 1000 - worker.lastScan < 120;
+  const maxAge = (worker?.config.resyncMs ?? 0) / 1000 + 120;
+  const healthy = !!worker?.lastScan && Date.now() / 1000 - worker.lastScan < maxAge;
   json(response, path === '/healthz' && !healthy ? 503 : 200, status(worker));
 }
 

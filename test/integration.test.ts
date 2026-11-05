@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent, type Event } from 'nostr-tools';
 import { sha256 } from '../src/blossom.ts';
 import { capture } from '../src/capture.ts';
@@ -530,4 +531,73 @@ Deno.test('unreachable author inbox relays cannot fail or delay acknowledgement 
     assert.equal(env.relay.published.length, 1);
     assert.deepEqual(store.counts(), { pending: 0, done: 1, failed: 0 });
   } finally { store.close(); await env.close(); }
+});
+
+Deno.test('an open but silent live stream cannot advance the rescan cursor past undelivered manifests', async () => {
+  const env = await environment(1000); const store = new Store(env.directory);
+  const worker = env.worker(store); const stop = new AbortController();
+  const originalNow = Date.now; const originalInterval = globalThis.setInterval;
+  // Exercise a heartbeat without a thirty-second test delay; only accelerate its known interval.
+  globalThis.setInterval = ((handler: () => void, delay?: number) =>
+    originalInterval(handler, delay === 30000 ? 5 : delay)) as typeof globalThis.setInterval;
+  const running = worker.run(stop.signal);
+  try {
+    await waitFor(() => worker.lastScan !== null && env.relay.subscriptions.size > 0);
+    const checkpoint = store.cursor(env.relay.url)!; const verified = worker.lastScan;
+    Date.now = () => originalNow() + 180000;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(store.cursor(env.relay.url), checkpoint, 'socket openness is not evidence of complete ingestion');
+    assert.equal(worker.lastScan, verified, 'local timers cannot fabricate a successful relay response');
+    const missed = manifest({ createdAt: checkpoint + 10 });
+    env.relay.events.push(missed); // Stored by the relay, deliberately never delivered over the live stream.
+    await worker.scan();
+    await waitFor(() => store.counts().done === 1);
+    assert.ok(env.relay.published.some(label => label.tags.some(tag => tag[0] === 'e' && tag[1] === missed.id)));
+  } finally {
+    Date.now = originalNow; globalThis.setInterval = originalInterval;
+    stop.abort(); await running; store.close(); await env.close();
+  }
+});
+
+Deno.test('upgrading legacy heartbeat cursors backfills missed history without discarding completed jobs', async () => {
+  const env = await environment(); let store = new Store(env.directory);
+  const completed = manifest(); const missed = manifest({ createdAt: Math.floor(Date.now() / 1000) - 600 });
+  const label = buildLabel(parseManifest(completed)!, { hash: sha256(smallPng), size: smallPng.length,
+    width: 1, height: 1, servers: env.config.blossomServers }, env.config.key, env.relay.url);
+  store.enqueue(parseManifest(completed)!, false); store.label(completed.id, label);
+  store.finish(completed.id); store.setFloor(env.relay.url, 0);
+  store.close();
+  const db = new DatabaseSync(join(env.directory, 'napshot.sqlite'));
+  const oldCursor = Math.floor(Date.now() / 1000);
+  db.exec('DROP TABLE IF EXISTS scan_cursors');
+  db.prepare('INSERT OR REPLACE INTO cursors VALUES (?,?)').run(env.relay.url, oldCursor);
+  db.close(); store = new Store(env.directory); env.relay.events.push(missed);
+  try {
+    assert.equal(store.cursor(env.relay.url), undefined, 'the old timer-driven cursor cannot prove coverage');
+    assert.equal(store.capturedEvent(label.id)?.id, label.id, 'the existing signed label is preserved');
+    const worker = env.worker(store); await worker.scan(); await worker.processOne();
+    assert.deepEqual(store.counts(), { pending: 0, done: 2, failed: 0 });
+    assert.ok(store.cursor(env.relay.url));
+    store.close(); store = new Store(env.directory);
+    const before = env.relay.queries.length; await env.worker(store).scan();
+    assert.ok(env.relay.queries[before].since! > 0, 'confirmed scans resume incrementally after recovery');
+    assert.deepEqual(store.counts(), { pending: 0, done: 2, failed: 0 });
+  } finally { store.close(); await env.close(); }
+});
+
+Deno.test('readiness expires from actual scan evidence using the configured resync interval', async () => {
+  const env = await environment(); const store = new Store(env.directory); env.config.resyncMs = 900000;
+  const worker = env.worker(store); const site = createSite(worker);
+  await new Promise<void>(resolve => site.listen(0, '127.0.0.1', resolve));
+  const address = site.address(); assert.ok(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}/healthz`;
+  try {
+    worker.lastScan = Math.floor(Date.now() / 1000) - 180;
+    let response = await fetch(url); assert.equal(response.status, 200); await response.body?.cancel();
+    worker.lastScan = Math.floor(Date.now() / 1000) - 1021;
+    response = await fetch(url); assert.equal(response.status, 503); await response.body?.cancel();
+  } finally {
+    site.closeAllConnections(); await new Promise<void>(resolve => site.close(() => resolve()));
+    store.close(); await env.close();
+  }
 });

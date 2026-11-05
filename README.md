@@ -219,9 +219,11 @@ To roll back, stop Deno, restore the previous code and service command, and reus
   persisted cursor with a 60-second overlap; the first pass per relay backfills all history
   down to `NAPSHOT_BACKFILL_SINCE`. Paging continues until a relay returns an empty page, so
   relays that cap `limit` below the request are still read to the end. Checkpoints advance
-  only after a complete pass, or while a caught-up subscription stays open. Relay timeout is
+  only after a complete finite query pass. Socket openness and local timers never advance
+  the persisted scan watermark. Relay timeout is
   an error, never an empty result. A periodic resync (`NAPSHOT_RESYNC_MS`) covers relays that
-  drop live deliveries.
+  drop live deliveries. Upgrades from timer-driven checkpoints perform one fresh historical
+  scan into `scan_cursors`; existing jobs, labels and legacy cursor rows are preserved.
 - New revisions supersede queued older revisions at the same address, using NIP-01
   timestamp and event-ID ordering. Already published labels remain attached to their original revisions.
 - Jobs, captures, upload receipts and signed labels live in SQLite. Each output label
@@ -247,7 +249,8 @@ To roll back, stop Deno, restore the previous code and service command, and reus
 `/api/status` reports the signer, configured endpoints, queue counts and last successful
 scan; it contains no secret key or manifest content. `relayErrors` exposes failed relay
 scans and clears each error when that relay recovers. `/healthz` returns 200 while at
-least one relay is caught up (a complete scan or live heartbeat in the last two minutes), otherwise 503. Logs are JSON
+least one relay has completed a finite scan within the configured resync interval plus
+two minutes of grace, otherwise 503. Idle socket timers cannot refresh this evidence. Logs are JSON
 with job IDs and bounded failure messages. A healthy scan does not imply every queued capture has succeeded; inspect the
 failed count and retry logs. Put a reverse proxy in front if exposing the page publicly.
 

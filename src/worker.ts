@@ -16,13 +16,12 @@ const defaultLog: Log = (level, message, fields) => console.log(JSON.stringify({
 
 const PAGE = 500;
 const BOUNDARY = 10000;
-const HEARTBEAT_MS = 30000;
 const IDLE_MS = 60000;
 
 /**
  * Live relay subscriptions feed a durable SQLite queue that parallel processors drain immediately.
  * History is backfilled once per relay down to `backfillSince`; checkpoints advance only after
- * complete, persisted ingestion or while a live subscription is known to be covering new events.
+ * complete, persisted finite queries. An open subscription is never proof of complete delivery.
  */
 export class Worker {
   lastScan: number | null = null;
@@ -128,21 +127,13 @@ export class Worker {
       const connection = new AbortController();
       const stop = () => connection.abort();
       signal.addEventListener('abort', stop, { once: true });
-      let synced = false;
-      const heartbeat = setInterval(() => {
-        // Everything newer than `started - 60` streams live, so a completed catch-up plus an open
-        // subscription means the relay is covered up to now.
-        if (!synced) return;
-        this.store.checkpoint(relay, Math.floor(Date.now() / 1000));
-        this.healthy(relay);
-      }, HEARTBEAT_MS);
       try {
         const subscription = this.relays.subscribe(relay, { kinds: KINDS, since: started - 60 }, {
           event: event => { if (this.ingest([event])) this.log('info', 'manifest_queued', { relay, id: event.id }); },
         }, connection.signal);
         subscription.catch(() => {}); // Observed below; avoid an unhandled rejection during catch-up.
         // Catch up from the stored cursor (or backfill history) while the live stream is already open.
-        synced = await this.syncRelay(relay, started);
+        const synced = await this.syncRelay(relay, started);
         if (synced) backoff = 1000;
         else connection.abort(); // Reconnect and retry catch-up rather than stream past a gap.
         await subscription;
@@ -151,7 +142,7 @@ export class Worker {
         this.relayErrors[relay] = message(error);
         this.log('warn', 'relay_subscription_lost', { relay, error: message(error), retryMs: backoff });
       } finally {
-        clearInterval(heartbeat); connection.abort(); signal.removeEventListener('abort', stop);
+        connection.abort(); signal.removeEventListener('abort', stop);
       }
       await sleep(backoff, undefined, { signal }).catch(() => {});
       backoff = Math.min(backoff * 2, 60000);
